@@ -8,6 +8,7 @@ require (
 	github.com/meln5674/gosh v0.0.0-20230418002009-f731b8b62575
 	github.com/onsi/ginkgo/v2 v2.9.2
 	github.com/onsi/gomega v1.27.6
+	k8s.io/klog/v2 v2.90.1
 	sigs.k8s.io/yaml v1.3.0
 )
 
@@ -24,5 +25,4 @@ require (
 	google.golang.org/protobuf v1.28.1 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
-	k8s.io/klog/v2 v2.90.1 // indirect
 )

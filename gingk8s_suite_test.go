@@ -85,7 +85,7 @@ var (
 	myWordpress = gingk8s.HelmRelease{
 		Name:  "wordpress",
 		Chart: &wordpress,
-		Set: map[string]interface{}{
+		Set: gingk8s.Object{
 			"ingress.enabled":  true,
 			"service.type":     "ClusterIP",
 			"image.registry":   customWordpressImage.Registry,

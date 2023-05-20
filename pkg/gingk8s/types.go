@@ -3,6 +3,7 @@ package gingk8s
 import (
 	"bufio"
 	"context"
+	"encoding/base64"
 	"fmt"
 	"io"
 	"os"
@@ -66,29 +67,69 @@ var (
 
 // Value is any valid value, but represents that values should be one of the following
 // Scalars (strings, bools, numbers)
+// Byte Slice/Arrays (Which will be converted to base64 representations when resolved)
 // Arrays/Slices of valid values (See `Array`)
 // A function with argument list of (), (context.Context) or (context.Context, Cluster) and return types of (Value) or (Value, error)
 // values of these types will be correctly handled and evaluated
-type Value = interface{}
+type Value interface{}
 
 // NestedValues must be either a `Value`, `Object`, or `Array`
-type NestedValue = interface{}
+type NestedValue interface{}
 
 // Object is a map from string keys to values
-type Object = map[string]Value
+type Object map[string]Value
+
+// DeepCopy returns a copy of this object where pointers and arrays have their values deep copied
+func (o Object) DeepCopy() Object {
+	return robjectCopy(reflect.ValueOf(o)).Interface().(Object)
+}
+
+// MergedFrom returns a deep copy of this object after adding or overwriting fields
+func (o Object) MergedFrom(toAdd Object) Object {
+	o2 := o.DeepCopy()
+	for k, v := range toAdd {
+		o2[k] = v
+	}
+	return o2
+}
+
+// With returns a deep copy of this object with an extra field added or overwritten
+func (o Object) With(k string, v Value) Object {
+	return o.MergedFrom(Object{k: v})
+}
 
 // StringObject is a map from string keys to string values
 type StringObject = map[string]string
 
 // Array is a slice of values
-type Array = []Value
+type Array []Value
 
 // A NestedObject is like an `Object`, but recursive
-type NestedObject = map[string]NestedValue
+type NestedObject map[string]NestedValue
+
+// DeepCopy returns a copy of this object where arrays, pointers, and objects have their contents deep copied
+func (o NestedObject) DeepCopy() NestedObject {
+	return rnestedObjectCopy(reflect.ValueOf(o)).Interface().(NestedObject)
+}
+
+// MergedFrom returns a deep copy of this object after adding or overwriting fields
+func (o NestedObject) MergedFrom(toAdd NestedObject) NestedObject {
+	o2 := o.DeepCopy()
+	for k, v := range toAdd {
+		o2[k] = v
+	}
+	return o2
+}
+
+// With returns a deep copy of this object with an extra field added or overwritten
+func (o NestedObject) With(k string, v NestedValue) NestedObject {
+	return o.MergedFrom(NestedObject{k: v})
+}
 
 func MkdirAll(path string, mode os.FileMode) gosh.Func {
 	return func(ctx context.Context, stdin io.Reader, stdout, stderr io.Writer, done chan error) error {
 		go func() {
+			defer GinkgoRecover()
 			var err error
 			defer func() { done <- err; close(done) }()
 			err = os.MkdirAll(path, mode)
@@ -151,6 +192,9 @@ type WaitFor struct {
 type KubernetesManifests struct {
 	// Name is a human-readable name to give the manifest set in logs
 	Name string
+	// ResourceObjects are objects to convert to YAML and treat as manifests.
+	// If using Object or NestedObject, functions are handled appropriately.
+	ResourceObjects []interface{}
 	// Resources are strings containing the manifests
 	Resources []string
 	// ResourcePaths are paths to individual resource files and (non-recursive) directories
@@ -213,6 +257,49 @@ func (k *KubectlCommand) CreateOrUpdate(ctx context.Context, cluster Cluster, ma
 			args = append(args, "--recursive")
 		}
 		return args
+	}
+	if len(manifests.ResourceObjects) != 0 {
+		applies = append(applies, gosh.Pipeline(
+			gosh.FromFunc(ctx, func(ctx context.Context, stdin io.Reader, stdout, stderr io.Writer, done chan error) error {
+				go func() {
+					defer GinkgoRecover()
+					var err error
+					defer func() { done <- err; close(done) }()
+					err = func() error {
+						for _, obj := range manifests.ResourceObjects {
+							var err error
+							var resolved interface{}
+							switch v := obj.(type) {
+							case Object:
+								resolved, err = resolveRObject(ctx, cluster, reflect.ValueOf(v))
+							case NestedObject:
+								resolved, err = resolveRNestedObject(ctx, cluster, reflect.ValueOf(v))
+							default:
+								resolved = v
+							}
+							if err != nil {
+								return err
+							}
+							objBytes, err := yaml.Marshal(resolved)
+							if err != nil {
+								return err
+							}
+							_, err = stdout.Write(objBytes)
+							if err != nil {
+								return err
+							}
+							_, err = stdout.Write([]byte("\n---\n"))
+							if err != nil {
+								return err
+							}
+						}
+						return nil
+					}()
+				}()
+				return nil
+			}),
+			k.Kubectl(ctx, cluster, applyFileArgs("-", false)),
+		))
 	}
 	for _, resource := range manifests.Resources {
 		applies = append(applies, k.Kubectl(ctx, cluster, applyFileArgs("-", false)).WithStreams(gosh.StringIn(resource)))
@@ -339,6 +426,7 @@ type HelmRelease struct {
 	UpgradeFlags []string
 	// DeleteFlags is a set of extra arguments to pass to helm delete
 	DeleteFlags []string
+	Wait        []WaitFor
 }
 
 // Helm knows how to install and uninstall helm charts
@@ -428,6 +516,22 @@ func rarrayString(ctx context.Context, cluster Cluster, s *strings.Builder, val 
 	return nil
 }
 
+func rnestedArrayCopy(val reflect.Value) reflect.Value {
+	val2 := reflect.MakeSlice(val.Type(), val.Len(), val.Len())
+	for ix := 0; ix < val.Len(); ix++ {
+		val2.Index(ix).Set(rnestedValueCopy(val.Index(ix)))
+	}
+	return val2
+}
+
+func rarrayCopy(val reflect.Value) reflect.Value {
+	val2 := reflect.MakeSlice(val.Type(), val.Len(), val.Len())
+	for ix := 0; ix < val.Len(); ix++ {
+		val2.Index(ix).Set(rvalueCopy(val.Index(ix)))
+	}
+	return val2
+}
+
 func resolveRFunc(ctx context.Context, cluster Cluster, val reflect.Value) (interface{}, error) {
 	typ := val.Type()
 	/*
@@ -513,14 +617,23 @@ func rfuncString(ctx context.Context, cluster Cluster, s *strings.Builder, val r
 func rvalueString(ctx context.Context, cluster Cluster, s *strings.Builder, val reflect.Value) error {
 	typ := val.Type()
 	switch val.Kind() {
-	case reflect.Interface:
+	case reflect.Interface, reflect.Pointer:
+		if val.IsNil() {
+			return nil
+		}
+		fmt.Printf("Deref'ing %v (%v) -> %v (%v)\n", val, typ, val.Elem(), typ.Elem())
 		return rvalueString(ctx, cluster, s, val.Elem())
 	case reflect.Array, reflect.Slice:
+		if typ.Elem().Kind() == reflect.Uint8 {
+			s.WriteString(base64.StdEncoding.EncodeToString(val.Interface().([]byte)))
+			return nil
+		}
 		return rarrayString(ctx, cluster, s, val)
 	case reflect.Func:
+		fmt.Printf("Calling %v (%v)\n", val, typ)
 		return rfuncString(ctx, cluster, s, val)
 	case reflect.Complex64, reflect.Complex128, reflect.Chan, reflect.Map, reflect.Struct, reflect.UnsafePointer:
-		return fmt.Errorf("Helm substitution does not support %v values (%#v). Values must be typical scalar, arrays/slices of valid types, and functions return return valid types", typ, val)
+		panic(fmt.Errorf("Helm substitution does not support %v values (%#v). Values must be typical scalar, arrays/slices of valid types, and functions return return valid types", typ, val))
 	}
 	return scalarString(ctx, cluster, s, val)
 }
@@ -530,11 +643,15 @@ func resolveRValue(ctx context.Context, cluster Cluster, val reflect.Value) (int
 	case reflect.Interface, reflect.Pointer:
 		return resolveRValue(ctx, cluster, val.Elem())
 	case reflect.Array, reflect.Slice:
+		if typ.Elem().Kind() == reflect.Uint8 {
+			return base64.StdEncoding.EncodeToString(val.Interface().([]byte)), nil
+		}
 		return resolveRArray(ctx, cluster, val)
 	case reflect.Func:
 		return resolveRFunc(ctx, cluster, val)
 	case reflect.Complex64, reflect.Complex128, reflect.Chan, reflect.Map, reflect.Struct, reflect.UnsafePointer:
-		return nil, fmt.Errorf("Helm substitution does not support %v values (%#v). Values must be typical scalar, arrays/slices of valid types, and functions return return valid types", typ, val)
+		panic(fmt.Errorf("Helm substitution does not support %v values (%#v). Values must be typical scalar, arrays/slices of valid types, and functions return return valid types", typ, val))
+		// return nil, fmt.Errorf("Helm substitution does not support %v values (%#v). Values must be typical scalar, arrays/slices of valid types, and functions return return valid types", typ, val)
 	}
 	return val.Interface(), nil
 }
@@ -543,30 +660,122 @@ func valueString(ctx context.Context, cluster Cluster, s *strings.Builder, v Val
 	return rvalueString(ctx, cluster, s, reflect.ValueOf(v))
 }
 
+func rvalueCopy(val reflect.Value) reflect.Value {
+	switch val.Kind() {
+	case reflect.Interface:
+		if val.IsNil() {
+			return val
+		}
+		val2 := rvalueCopy(val.Elem()).Convert(val.Type())
+		fmt.Printf("Copied %v/%v (%v/%v) as %v/%v (%v/%v)\n", val.Type(), val, val.Elem().Type(), val.Elem(), val2.Type(), val2, val2.Elem().Type(), val2.Elem())
+		return val2
+	case reflect.Pointer:
+		if val.IsNil() {
+			return val
+		}
+		val2 := reflect.New(val.Type().Elem())
+		val2.Elem().Set(rvalueCopy(val2.Elem()))
+		fmt.Printf("Copied %v/%v (%v/%v) as %v/%v (%v/%v)\n", val.Type(), val, val.Elem().Type(), val.Elem(), val2.Type(), val2, val2.Elem().Type(), val2.Elem())
+		return val2
+	case reflect.Array, reflect.Slice:
+		if val.Type().Elem().Kind() == reflect.Uint8 {
+			out := make([]byte, val.Len())
+			copy(out, val.Interface().([]byte))
+			return reflect.ValueOf(out)
+		}
+		return rarrayCopy(val)
+	}
+	return val
+}
+
+func robjectCopy(val reflect.Value) reflect.Value {
+	val2 := reflect.MakeMapWithSize(val.Type(), val.Len())
+	iter := val.MapRange()
+	for iter.Next() {
+		val2.SetMapIndex(iter.Key(), rvalueCopy(iter.Value()))
+	}
+	return val2
+}
+
+func resolveRObject(ctx context.Context, cluster Cluster, val reflect.Value) (interface{}, error) {
+	var err error
+	out := make(map[string]interface{}, val.Len())
+	iter := val.MapRange()
+	for iter.Next() {
+		out[iter.Key().Interface().(string)], err = resolveRValue(ctx, cluster, iter.Value())
+		if err != nil {
+			return nil, err
+		}
+	}
+	return out, nil
+}
+
+func rnestedObjectCopy(val reflect.Value) reflect.Value {
+	val2 := reflect.MakeMapWithSize(val.Type(), val.Len())
+	iter := val.MapRange()
+	for iter.Next() {
+		val2.SetMapIndex(iter.Key(), rnestedValueCopy(iter.Value()))
+	}
+	return val2
+}
+
+func resolveRNestedObject(ctx context.Context, cluster Cluster, val reflect.Value) (interface{}, error) {
+	var err error
+	out := make(map[string]interface{}, val.Len())
+	iter := val.MapRange()
+	for iter.Next() {
+		out[iter.Key().Interface().(string)], err = resolveRNestedValue(ctx, cluster, iter.Value())
+		if err != nil {
+			return nil, err
+		}
+	}
+	return out, nil
+}
+
 func resolveRNestedValue(ctx context.Context, cluster Cluster, val reflect.Value) (interface{}, error) {
 	switch val.Kind() {
 	case reflect.Interface, reflect.Pointer:
 		return resolveRNestedValue(ctx, cluster, val.Elem())
 	case reflect.Array, reflect.Slice:
+		if val.Type().Elem().Kind() == reflect.Uint8 {
+			return base64.StdEncoding.EncodeToString(val.Interface().([]byte)), nil
+		}
 		return resolveRNestedArray(ctx, cluster, val)
 	case reflect.Func:
 		return resolveRNestedFunc(ctx, cluster, val)
 	case reflect.Map:
-		var err error
-		out := make(map[string]interface{}, val.Len())
-		iter := val.MapRange()
-		for iter.Next() {
-			out[iter.Key().Interface().(string)], err = resolveRNestedValue(ctx, cluster, iter.Value())
-			if err != nil {
-				return nil, err
-			}
-		}
-		return out, nil
+		return resolveRNestedObject(ctx, cluster, val)
 	}
 	return resolveRValue(ctx, cluster, val)
 }
 func resolveNestedValue(ctx context.Context, cluster Cluster, v NestedValue) (interface{}, error) {
 	return resolveRNestedValue(ctx, cluster, reflect.ValueOf(v))
+}
+
+func rnestedValueCopy(val reflect.Value) reflect.Value {
+	switch val.Kind() {
+	case reflect.Interface:
+		if val.IsNil() {
+			return val
+		}
+		return rvalueCopy(val.Elem()).Convert(val.Type())
+	case reflect.Pointer:
+		if val.IsNil() {
+			return val
+		}
+		val2 := reflect.New(val.Type().Elem())
+		val2.Elem().Set(rnestedValueCopy(val2.Elem()))
+	case reflect.Array, reflect.Slice:
+		if val.Type().Elem().Kind() == reflect.Uint8 {
+			out := make([]byte, val.Len())
+			copy(out, val.Interface().([]byte))
+			return reflect.ValueOf(out)
+		}
+		return rnestedArrayCopy(val)
+	case reflect.Map:
+		return rnestedObjectCopy(val)
+	}
+	return val
 }
 
 func resolveNestedObject(ctx context.Context, cluster Cluster, o NestedObject) (interface{}, error) {
@@ -591,7 +800,7 @@ func (h *HelmCommand) InstallOrUpgrade(ctx context.Context, cluster Cluster, rel
 		if err != nil {
 			panic(err)
 		}
-		args = append(args, "--set", fmt.Sprintf("%s=%s", k, s.String())) // TODO: use reflect to find arrays and correctly serialize them
+		args = append(args, "--set", fmt.Sprintf("%s=%s", k, s.String()))
 	}
 	for k, v := range release.SetString {
 		args = append(args, "--set-string", k+"="+v)
@@ -620,6 +829,7 @@ func (h *HelmCommand) InstallOrUpgrade(ctx context.Context, cluster Cluster, rel
 	}
 	mktemp := gosh.FromFunc(ctx, func(ctx context.Context, stdin io.Reader, stdout, stderr io.Writer, done chan error) error {
 		go func() {
+			defer GinkgoRecover()
 			var err error
 			defer func() { done <- err; close(done) }()
 			err = os.MkdirAll(valueDir, 0700)
@@ -721,8 +931,8 @@ type Images interface {
 	Pull(ctx context.Context, image *ThirdPartyImage) gosh.Commander
 	// Build builds a local image with one or more tags
 	Build(ctx context.Context, image *CustomImage, tag string, extraTags []string) gosh.Commander
-	// Save exports a built image as a tarball and indicates the format it will do so with
-	Save(ctx context.Context, image string, dest string) (gosh.Commander, ImageFormat)
+	// Save exports a set of built images as a tarball and indicates the format it will do so with
+	Save(ctx context.Context, images []string, dest string) (gosh.Commander, ImageFormat)
 }
 
 // DockerCommand is a reference to an install docker client binary
@@ -781,10 +991,12 @@ func (d *DockerCommand) Build(ctx context.Context, image *CustomImage, tag strin
 }
 
 // Save implements Images
-func (d *DockerCommand) Save(ctx context.Context, image string, dest string) (gosh.Commander, ImageFormat) {
+func (d *DockerCommand) Save(ctx context.Context, images []string, dest string) (gosh.Commander, ImageFormat) {
+	args := []string{"save"}
+	args = append(args, images...)
 	return gosh.And(
 		gosh.FromFunc(ctx, MkdirAll(filepath.Dir(dest), 0700)),
-		d.docker(ctx, []string{"save", image}).WithStreams(gosh.FileOut(dest)),
+		d.docker(ctx, args).WithStreams(gosh.FileOut(dest)),
 	), DockerImageFormat
 }
 
@@ -876,34 +1088,56 @@ func (k *KindCluster) Create(ctx context.Context, skipExisting bool) gosh.Comman
 	}
 	mkConfig := gosh.FromFunc(ctx, func(ctx context.Context, stdin io.Reader, stdout, stderr io.Writer, done chan error) error {
 		go func() {
+			defer GinkgoRecover()
 			var err error
-			defer func() { done <- err; close(done) }()
-			templateBytes, err := os.ReadFile(k.ConfigFileTemplatePath)
-			if err != nil {
+			defer func() {
+				done <- err
+				close(done)
+			}()
+			if k.ConfigFileTemplatePath == "" {
+				GinkgoWriter.Printf("Kind config file template path is not set, assuming pre-made configuration path %s is ready\n", configPath)
 				return
 			}
-			configTemplate, err := template.New(k.ConfigFileTemplatePath).Parse(string(templateBytes))
-			if err != nil {
-				return
-			}
-			env := map[string]string{}
-			for _, line := range os.Environ() {
-				parts := strings.SplitN(line, "=", 2)
-				if len(parts) == 1 {
-					parts = append(parts, "")
+			defer func() {
+				if err != nil {
+					GinkgoWriter.Printf("FAILED: Generating Kind config for cluster %s from template %s: %v", configPath, k.ConfigFileTemplatePath, err)
 				}
-				env[parts[0]] = parts[1]
-			}
-			templateData := map[string]interface{}{
-				"Env":  env,
-				"Data": k.ConfigFileTemplateData,
-			}
-			f, err := os.Create(k.ConfigFileTemplatePath)
-			if err != nil {
-				return
-			}
-			defer f.Close()
-			err = configTemplate.Execute(f, templateData)
+			}()
+			err = func() error {
+				GinkgoWriter.Printf("Generating Kind config for cluster %s from template %s\n", configPath, k.ConfigFileTemplatePath)
+
+				templateBytes, err := os.ReadFile(k.ConfigFileTemplatePath)
+				if err != nil {
+					return err
+				}
+				configTemplate, err := template.New(k.ConfigFileTemplatePath).Parse(string(templateBytes))
+				if err != nil {
+					return err
+				}
+				env := map[string]string{}
+				for _, line := range os.Environ() {
+					parts := strings.SplitN(line, "=", 2)
+					if len(parts) == 1 {
+						parts = append(parts, "")
+					}
+					env[parts[0]] = parts[1]
+				}
+				templateData := map[string]interface{}{
+					"Env":  env,
+					"Data": k.ConfigFileTemplateData,
+				}
+				f, err := os.Create(configPath)
+				if err != nil {
+					return err
+				}
+				defer f.Close()
+				err = configTemplate.Execute(f, templateData)
+				if err != nil {
+					return err
+				}
+				GinkgoWriter.Printf("SUCCEEDED: Generating Kind config for cluster %s from template %s\n", configPath, k.ConfigFileTemplatePath)
+				return nil
+			}()
 		}()
 		return nil
 	})
@@ -912,6 +1146,7 @@ func (k *KindCluster) Create(ctx context.Context, skipExisting bool) gosh.Comman
 		k.kind(ctx, []string{"get", "clusters"}),
 		gosh.FromFunc(ctx, func(ctx context.Context, stdin io.Reader, stdout, stderr io.Writer, done chan error) error {
 			go func() {
+				defer GinkgoRecover()
 				var err error
 				defer func() { done <- err; close(done) }()
 				lines := bufio.NewScanner(stdin)
@@ -948,11 +1183,7 @@ func (k *KindCluster) Create(ctx context.Context, skipExisting bool) gosh.Comman
 	} else {
 		create = createCluster
 	}
-	if k.ConfigFileTemplatePath != "" {
-		return gosh.And(mkdir, mkConfig, create)
-	} else {
-		return gosh.And(mkdir, create)
-	}
+	return gosh.And(mkdir, mkConfig, create)
 }
 
 // GetConnection implements cluster
@@ -969,10 +1200,34 @@ func (k *KindCluster) GetTempPath(group string, path string) string {
 
 // LoadImages implements cluster
 func (k *KindCluster) LoadImages(ctx context.Context, from Images, format ImageFormat, images []string) gosh.Commander {
+	if len(images) == 0 {
+		return gosh.FromFunc(ctx, func(ctx context.Context, stdin io.Reader, stdout, stderr io.Writer, done chan error) error {
+			close(done)
+			return nil
+		})
+	}
 	saves := []gosh.Commander{}
+	allSame := true
+	last := ""
+	archivePaths := make([]string, len(images))
+	for ix, image := range images {
+		parts := strings.Split(image, ":")
+		if last != "" && parts[0] != last {
+			allSame = false
+			break
+		}
+		last = parts[0]
+		archivePaths[ix] = strings.Join(parts, "/")
+	}
+	if allSame {
+		save, _ := from.Save(ctx, images, archivePaths[0])
+		load := k.kind(ctx, []string{"load", "image-archive", archivePaths[0]})
+		return gosh.And(save, load)
+	}
+
 	for _, image := range images {
 		path := filepath.Join(k.TempDir, "images", string(format), strings.ReplaceAll(image, ":", "/")+".tar")
-		save, _ := from.Save(ctx, image, path)
+		save, _ := from.Save(ctx, []string{image}, path)
 		load := k.kind(ctx, []string{"load", "image-archive", path})
 		saves = append(saves, gosh.And(save, load))
 	}
@@ -1006,4 +1261,51 @@ type ResourceReference struct {
 	Namespace string
 	Kind      string
 	Name      string
+}
+
+// ConfigMap returns a NestedObject which can be used in KubernetesManifests.
+// binaryData should be raw []byte's, not base64 encoded
+func ConfigMap(name, namespace string, data, binaryData Object) NestedObject {
+	metadata := NestedObject{
+		"name": name,
+	}
+	if namespace != "" {
+		metadata["namespace"] = namespace
+	}
+	configMap := NestedObject{
+		"apiVersion": "v1",
+		"kind":       "ConfigMap",
+		"metadata":   metadata,
+	}
+	if data != nil {
+		configMap["data"] = data
+	}
+	if binaryData != nil {
+		configMap["binaryData"] = binaryData
+	}
+	return configMap
+}
+
+// Secret returns a NestedObject which can be used in KubernetesManifests
+// data should be raw []byte's, not base64 encoded
+func Secret(name, namespace, typ string, data, stringData Object) NestedObject {
+	metadata := NestedObject{
+		"name": name,
+	}
+	if namespace != "" {
+		metadata["namespace"] = namespace
+	}
+	secret := NestedObject{
+		"apiVersion": "v1",
+		"kind":       "Secret",
+		"metadata":   metadata,
+		"type":       typ,
+	}
+	if data != nil {
+		secret["data"] = data
+	}
+	if stringData != nil {
+		secret["stringData"] = stringData
+	}
+	return secret
 }

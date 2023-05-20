@@ -91,7 +91,9 @@ func (l *loadCustomImageAction) Setup(ctx context.Context) error {
 	}
 	defer ByStartStop(fmt.Sprintf("Loading image %s", state.customImages[l.imageID].WithTag(state.opts.CustomImageTag)))()
 	allTags := []string{state.customImages[l.imageID].WithTag(state.opts.CustomImageTag)}
-
+	for _, extra := range state.opts.ExtraCustomImageTags {
+		allTags = append(allTags, state.customImages[l.imageID].WithTag(extra))
+	}
 	return state.clusters[l.clusterID].LoadImages(ctx, state.opts.Images, state.customImageFormats[l.imageID], allTags).Run()
 }
 
@@ -178,7 +180,7 @@ func (c *clusterActionAction) Cleanup(ctx context.Context) {
 		return
 	}
 	if c.cleanup == nil {
-
+		return
 	}
 
 	defer ByStartStop(fmt.Sprintf("Undoing action %s", c.name))()
@@ -501,6 +503,31 @@ func KubectlGetSecretValue(ctx context.Context, cluster types.Cluster, name, key
 		)
 }
 
+func KubectlReturnSecretValue(ctx context.Context, cluster types.Cluster, name, key string, args ...string) string {
+	var out string
+	Expect(KubectlGetSecretValue(ctx, cluster, name, key, &out).Run()).To(Succeed())
+	return out
+}
+
+func KubectlGetSecretBase64(ctx context.Context, cluster types.Cluster, name, key string, value *string, args ...string) *gosh.Cmd {
+	allArgs := []string{
+		"get", "secret", name,
+		"--template", fmt.Sprintf(`{{ index .data "%s" }}`, key),
+	}
+	allArgs = append(allArgs, args...)
+	return Kubectl(ctx, cluster, allArgs...).
+		WithStreams(
+			gosh.FuncOut(func(stdout io.Reader) error {
+				var err error
+				var bytes []byte
+				bytes, err = ioutil.ReadAll(stdout)
+				*value = string(bytes)
+				return err
+			}),
+			types.GinkgoErr,
+		)
+}
+
 func KubectlExec(ctx context.Context, cluster types.Cluster, name, cmd string, cmdArgs []string, args ...string) *gosh.Cmd {
 	allArgs := []string{"exec", "-i", name}
 	allArgs = append(allArgs, args...)
@@ -537,7 +564,8 @@ func (k *KubectlWatcher) Cleanup() types.ClusterAction {
 		if err != nil {
 			return err
 		}
-		return k.cmd.Wait()
+		k.cmd.Wait()
+		return nil
 	}
 }
 
