@@ -3,10 +3,20 @@ package gingk8s
 import (
 	"context"
 	"fmt"
+	"strings"
+	"time"
 
+	"github.com/meln5674/gosh"
 	. "github.com/onsi/ginkgo/v2"
+)
 
-	types "github.com/meln5674/gingk8s/pkg/gingk8s"
+var (
+	// DefaultCustomImageTag is the default tag to apply to custom images if none is specified
+	DefaultCustomImageTag = "gingk8s-latest"
+
+	// DefaultImages is the default interface used to manage images if none is specified.
+	// It defaults to using the "docker" command on the $PATH
+	DefaultImages = &DockerCommand{}
 )
 
 type ThirdPartyImageID struct {
@@ -17,32 +27,32 @@ type CustomImageID struct {
 	id string
 }
 
-func ThirdPartyImage(image *types.ThirdPartyImage) ThirdPartyImageID {
-	return ThirdPartyImages(image)[0]
+func (g Gingk8s) ThirdPartyImage(image *ThirdPartyImage) ThirdPartyImageID {
+	return g.ThirdPartyImages(image)[0]
 }
 
-func ThirdPartyImages(images ...*types.ThirdPartyImage) []ThirdPartyImageID {
+func (g Gingk8s) ThirdPartyImages(images ...*ThirdPartyImage) []ThirdPartyImageID {
 	newIDs := []ThirdPartyImageID{}
 	for ix := range images {
 		newID := newID()
 		newIDs = append(newIDs, ThirdPartyImageID{id: newID})
-		state.thirdPartyImages[newID] = images[ix]
-		state.setup = append(state.setup, &specNode{id: newID, specAction: &pullThirdPartyImageAction{id: newID}})
+		g.thirdPartyImages[newID] = images[ix]
+		g.setup = append(g.setup, &specNode{state: g.specState, id: newID, specAction: &pullThirdPartyImageAction{id: newID}})
 	}
 	return newIDs
 }
 
-func CustomImage(image *types.CustomImage) CustomImageID {
-	return CustomImages(image)[0]
+func (g Gingk8s) CustomImage(image *CustomImage) CustomImageID {
+	return g.CustomImages(image)[0]
 }
 
-func CustomImages(images ...*types.CustomImage) []CustomImageID {
+func (g Gingk8s) CustomImages(images ...*CustomImage) []CustomImageID {
 	newIDs := []CustomImageID{}
 	for ix := range images {
 		newID := newID()
 		newIDs = append(newIDs, CustomImageID{id: newID})
-		state.customImages[newID] = images[ix]
-		state.setup = append(state.setup, &specNode{id: newID, specAction: &buildCustomImageAction{id: newID}})
+		g.customImages[newID] = images[ix]
+		g.setup = append(g.setup, &specNode{state: g.specState, id: newID, specAction: &buildCustomImageAction{id: newID}})
 	}
 	return newIDs
 }
@@ -51,31 +61,31 @@ type pullThirdPartyImageAction struct {
 	id string
 }
 
-func (p *pullThirdPartyImageAction) Setup(ctx context.Context) error {
-	if state.opts.NoPull {
+func (p *pullThirdPartyImageAction) Setup(ctx context.Context, state *specState) error {
+	if state.suite.opts.NoPull {
 		By(fmt.Sprintf("SKIPPED: Pulling image %s", state.thirdPartyImages[p.id].Name))
 		return nil
 	}
 	By(fmt.Sprintf("Pulling image %s", state.thirdPartyImages[p.id].Name))
-	return state.opts.Images.Pull(ctx, state.thirdPartyImages[p.id]).Run()
+	return state.suite.opts.Images.Pull(ctx, state.thirdPartyImages[p.id]).Run()
 }
 
-func (p *pullThirdPartyImageAction) Cleanup(ctx context.Context) {}
+func (p *pullThirdPartyImageAction) Cleanup(ctx context.Context, state *specState) {}
 
 type buildCustomImageAction struct {
 	id string
 }
 
-func (b *buildCustomImageAction) Setup(ctx context.Context) error {
-	if state.opts.NoBuild {
-		By(fmt.Sprintf("SKIPPED: Building image %s", state.customImages[b.id].WithTag(state.opts.CustomImageTag)))
+func (b *buildCustomImageAction) Setup(ctx context.Context, state *specState) error {
+	if state.suite.opts.NoBuild {
+		By(fmt.Sprintf("SKIPPED: Building image %s", state.customImages[b.id].WithTag(state.suite.opts.CustomImageTag)))
 		return nil
 	}
-	defer ByStartStop(fmt.Sprintf("Building image %s", state.customImages[b.id].WithTag(state.opts.CustomImageTag)))()
-	return state.opts.Images.Build(ctx, state.customImages[b.id], state.opts.CustomImageTag, state.opts.ExtraCustomImageTags).Run()
+	defer ByStartStop(fmt.Sprintf("Building image %s", state.customImages[b.id].WithTag(state.suite.opts.CustomImageTag)))()
+	return state.suite.opts.Images.Build(ctx, state.customImages[b.id], state.suite.opts.CustomImageTag, state.suite.opts.ExtraCustomImageTags).Run()
 }
 
-func (b *buildCustomImageAction) Cleanup(ctx context.Context) {}
+func (b *buildCustomImageAction) Cleanup(ctx context.Context, state *specState) {}
 
 type loadThirdPartyImageAction struct {
 	id        string
@@ -83,16 +93,16 @@ type loadThirdPartyImageAction struct {
 	imageID   string
 }
 
-func (l *loadThirdPartyImageAction) Setup(ctx context.Context) error {
-	if state.opts.NoLoadPulled {
+func (l *loadThirdPartyImageAction) Setup(ctx context.Context, state *specState) error {
+	if state.suite.opts.NoLoadPulled {
 		By(fmt.Sprintf("SKIPPED: Loading image %s", state.thirdPartyImages[l.id].Name))
 		return nil
 	}
 	defer ByStartStop(fmt.Sprintf("Loading image %s", state.thirdPartyImages[l.imageID].Name))()
-	return state.clusters[l.clusterID].LoadImages(ctx, state.opts.Images, state.thirdPartyImageFormats[l.imageID], []string{state.thirdPartyImages[l.imageID].Name}).Run()
+	return state.getCluster(l.clusterID).LoadImages(ctx, state.suite.opts.Images, state.thirdPartyImageFormats[l.imageID], []string{state.thirdPartyImages[l.imageID].Name}).Run()
 }
 
-func (l *loadThirdPartyImageAction) Cleanup(ctx context.Context) {}
+func (l *loadThirdPartyImageAction) Cleanup(ctx context.Context, state *specState) {}
 
 type loadCustomImageAction struct {
 	id        string
@@ -100,17 +110,81 @@ type loadCustomImageAction struct {
 	imageID   string
 }
 
-func (l *loadCustomImageAction) Setup(ctx context.Context) error {
-	if state.opts.NoLoadBuilt {
-		By(fmt.Sprintf("SKIPPED: Loading image %s", state.customImages[l.imageID].WithTag(state.opts.CustomImageTag)))
+func (l *loadCustomImageAction) Setup(ctx context.Context, state *specState) error {
+	if state.suite.opts.NoLoadBuilt {
+		By(fmt.Sprintf("SKIPPED: Loading image %s", state.customImages[l.imageID].WithTag(state.suite.opts.CustomImageTag)))
 		return nil
 	}
-	defer ByStartStop(fmt.Sprintf("Loading image %s", state.customImages[l.imageID].WithTag(state.opts.CustomImageTag)))()
-	allTags := []string{state.customImages[l.imageID].WithTag(state.opts.CustomImageTag)}
-	for _, extra := range state.opts.ExtraCustomImageTags {
+	defer ByStartStop(fmt.Sprintf("Loading image %s", state.customImages[l.imageID].WithTag(state.suite.opts.CustomImageTag)))()
+	allTags := []string{state.customImages[l.imageID].WithTag(state.suite.opts.CustomImageTag)}
+	for _, extra := range state.suite.opts.ExtraCustomImageTags {
 		allTags = append(allTags, state.customImages[l.imageID].WithTag(extra))
 	}
-	return state.clusters[l.clusterID].LoadImages(ctx, state.opts.Images, state.customImageFormats[l.imageID], allTags).Run()
+	return state.getCluster(l.clusterID).LoadImages(ctx, state.suite.opts.Images, state.customImageFormats[l.imageID], allTags).Run()
 }
 
-func (l *loadCustomImageAction) Cleanup(ctx context.Context) {}
+func (l *loadCustomImageAction) Cleanup(ctx context.Context, state *specState) {}
+
+func DefaultExtraCustomImageTags() []string {
+	return []string{fmt.Sprintf("gingk8s-ts-%d", time.Now().Unix())}
+}
+
+// ThirdPartyImage represents an externally hosted image to be pulled and loaded into the cluster
+type ThirdPartyImage struct {
+	// Name is the name of the image to pull
+	Name string
+	// Retag is the name of the local image to re-tag as before loading into the cluster. If absent, will be loaded as Name
+	Retag string
+	// NoPull indicates the image should not be pulled, e.g. if its built by another local process outside of gingk8s
+	NoPull bool
+}
+
+// CustomImage represents a custom image to be built from the local filesystem and loaded into the cluster
+type CustomImage struct {
+	// Registry is the registry component of the image name
+	Registry string
+	// Repository is the repository component of the image name
+	Repository string
+	// ContextDir is the directory to build the image from
+	ContextDir string
+	// Dockerfile is the path relative to ContextDir containing the Dockerfile/Containerfile
+	Dockerfile string
+	// BuildArgs is a map of --build-arg args
+	BuildArgs map[string]string
+	// Flags are extra flags to the build command
+	Flags []string
+}
+
+func (c *CustomImage) WithTag(tag string) string {
+	image := strings.Builder{}
+	if c.Registry != "" {
+		image.WriteString(c.Registry)
+		image.WriteString("/")
+	}
+	image.WriteString(c.Repository)
+	if tag != "" {
+		image.WriteString(":")
+		image.WriteString(tag)
+	}
+	return image.String()
+}
+
+// ImageFormat is what format an image is exported as
+type ImageFormat string
+
+const (
+	// DockerImageFormat indicates an image was exported as if from `docker save`
+	DockerImageFormat ImageFormat = "docker"
+	// OCIImageFormat indicates an image was exported as if from `buildah push`
+	OCIImageFormat ImageFormat = "oci"
+)
+
+// Images knows how to handle images
+type Images interface {
+	// Pull pulls (and, if requested, re-tags) third party images
+	Pull(ctx context.Context, image *ThirdPartyImage) gosh.Commander
+	// Build builds a local image with one or more tags
+	Build(ctx context.Context, image *CustomImage, tag string, extraTags []string) gosh.Commander
+	// Save exports a set of built images as a tarball and indicates the format it will do so with
+	Save(ctx context.Context, images []string, dest string) (gosh.Commander, ImageFormat)
+}

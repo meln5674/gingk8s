@@ -6,18 +6,17 @@ import (
 
 	"github.com/meln5674/godag"
 	. "github.com/onsi/ginkgo/v2"
-
-	types "github.com/meln5674/gingk8s/pkg/gingk8s"
 )
 
 type specAction interface {
-	Setup(context.Context) error
-	Cleanup(context.Context)
+	Setup(context.Context, *specState) error
+	Cleanup(context.Context, *specState)
 }
 
 type specNode struct {
 	ctx context.Context
 	specAction
+	state     *specState
 	id        string
 	dependsOn []string
 }
@@ -27,7 +26,7 @@ var _ = godag.Node[string](&specNode{})
 func (s *specNode) DoDAGTask() error {
 	// defer GinkgoRecover()
 	defer ByStartStop(fmt.Sprintf("Gingk8s Node: %s", s.id))()
-	err := s.Setup(s.ctx)
+	err := s.Setup(s.ctx, s.state)
 	if err != nil {
 		return err
 	}
@@ -44,21 +43,33 @@ func (s *specNode) GetDependencies() godag.Set[string] {
 }
 
 type specState struct {
-	thirdPartyImages map[string]*types.ThirdPartyImage
+	thirdPartyImages map[string]*ThirdPartyImage
 
-	thirdPartyImageFormats map[string]types.ImageFormat
-	customImages           map[string]*types.CustomImage
-	customImageFormats     map[string]types.ImageFormat
+	thirdPartyImageFormats map[string]ImageFormat
+	customImages           map[string]*CustomImage
+	customImageFormats     map[string]ImageFormat
 
 	clusterThirdPartyLoads map[string]map[string]string
 	clusterCustomLoads     map[string]map[string]string
 
-	clusters map[string]types.Cluster
+	clusters map[string]Cluster
+
+	manifests      map[string]*KubernetesManifests
+	releases       map[string]*HelmRelease
+	clusterActions map[string]ClusterAction
 
 	parent *specState
 	suite  *suiteState
 
 	setup []*specNode
+}
+
+func (s *specState) getCluster(id string) Cluster {
+	c, ok := s.clusters[id]
+	if !ok && s.parent != nil {
+		return s.parent.getCluster(id)
+	}
+	return c
 }
 
 func (s *specState) child() specState {
@@ -67,15 +78,19 @@ func (s *specState) child() specState {
 
 func newSpecState(suite *suiteState, parent *specState) specState {
 	return specState{
-		thirdPartyImages:       make(map[string]*types.ThirdPartyImage),
-		thirdPartyImageFormats: make(map[string]types.ImageFormat),
-		customImages:           make(map[string]*types.CustomImage),
-		customImageFormats:     make(map[string]types.ImageFormat),
+		thirdPartyImages:       make(map[string]*ThirdPartyImage),
+		thirdPartyImageFormats: make(map[string]ImageFormat),
+		customImages:           make(map[string]*CustomImage),
+		customImageFormats:     make(map[string]ImageFormat),
 
 		clusterThirdPartyLoads: make(map[string]map[string]string),
 		clusterCustomLoads:     make(map[string]map[string]string),
 
-		clusters: make(map[string]types.Cluster),
+		clusters: make(map[string]Cluster),
+
+		manifests:      make(map[string]*KubernetesManifests),
+		releases:       make(map[string]*HelmRelease),
+		clusterActions: make(map[string]ClusterAction),
 
 		suite: suite,
 

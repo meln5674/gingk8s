@@ -12,8 +12,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/meln5674/godag"
 	"github.com/meln5674/gosh"
-
-	types "github.com/meln5674/gingk8s/pkg/gingk8s"
 )
 
 func ByStartStop(msg string) func() {
@@ -27,34 +25,51 @@ func newID() string {
 	return id.String()
 }
 
-func Gingk8sSetup(ctx context.Context) {
+type Gingk8s struct {
+	*specState
+}
+
+func ForSuite() Gingk8s {
 	klogFlags := flag.NewFlagSet("klog", flag.PanicOnError)
 	klog.InitFlags(klogFlags)
 	Expect(klogFlags.Parse([]string{"-v=11"})).To(Succeed())
 
-	if state.opts.CustomImageTag == "" {
-		state.opts.CustomImageTag = types.DefaultCustomImageTag
+	return Gingk8s{specState: &state.specState}
+}
+
+func (g Gingk8s) Options(opts SuiteOpts) {
+	g.suite.opts = opts
+}
+
+func (g Gingk8s) ForSpec() Gingk8s {
+	child := g.child()
+	return Gingk8s{specState: &child}
+}
+
+func (g *Gingk8s) Setup(ctx context.Context) {
+	if g.suite.opts.CustomImageTag == "" {
+		g.suite.opts.CustomImageTag = DefaultCustomImageTag
 	}
-	if state.opts.ExtraCustomImageTags == nil {
-		state.opts.ExtraCustomImageTags = types.DefaultExtraCustomImageTags()
+	if g.suite.opts.ExtraCustomImageTags == nil {
+		g.suite.opts.ExtraCustomImageTags = DefaultExtraCustomImageTags()
 	}
-	if state.opts.Images == nil {
-		state.opts.Images = types.DefaultImages
+	if g.suite.opts.Images == nil {
+		g.suite.opts.Images = DefaultImages
 	}
-	if state.opts.Manifests == nil {
-		state.opts.Manifests = types.DefaultManifests
+	if g.suite.opts.Manifests == nil {
+		g.suite.opts.Manifests = DefaultManifests
 	}
-	if state.opts.Helm == nil {
-		state.opts.Helm = types.DefaultHelm
+	if g.suite.opts.Helm == nil {
+		g.suite.opts.Helm = DefaultHelm
 	}
-	if state.opts.Kubectl == nil {
-		state.opts.Kubectl = types.DefaultKubectl
+	if g.suite.opts.Kubectl == nil {
+		g.suite.opts.Kubectl = DefaultKubectl
 	}
 
-	repos := make(map[string]*types.HelmRepo, len(state.releases))
+	repos := make(map[string]*HelmRepo, len(g.releases))
 	repoReleases := make(map[string]string)
 
-	for _, release := range state.releases {
+	for _, release := range g.releases {
 		if !release.Chart.IsLocal() {
 			existing, ok := repos[release.Chart.Name]
 			if !ok {
@@ -68,18 +83,18 @@ func Gingk8sSetup(ctx context.Context) {
 
 	repoAdds := make([]gosh.Commander, 0, len(repos))
 	for _, repo := range repos {
-		repoAdds = append(repoAdds, state.opts.Helm.AddRepo(ctx, repo))
+		repoAdds = append(repoAdds, g.suite.opts.Helm.AddRepo(ctx, repo))
 	}
 	Expect(gosh.FanOut(repoAdds...).Run()).To(Succeed())
 
 	ex := godag.Executor[string, *specNode]{}
 
-	for ix := range state.setup {
-		state.setup[ix].ctx = ctx
-		GinkgoWriter.Printf("Node: %#v\n", state.setup[ix])
+	for ix := range g.setup {
+		g.setup[ix].ctx = ctx
+		GinkgoWriter.Printf("Node: %#v\n", g.setup[ix])
 	}
 
-	dag, err := godag.Build[string, *specNode](state.setup)
+	dag, err := godag.Build[string, *specNode](g.setup)
 	Expect(err).ToNot(HaveOccurred())
 
 	Expect(ex.Run(dag, godag.Options[string]{})).To(Succeed())

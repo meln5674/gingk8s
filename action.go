@@ -5,25 +5,25 @@ import (
 	"fmt"
 
 	. "github.com/onsi/gomega"
-
-	types "github.com/meln5674/gingk8s/pkg/gingk8s"
 )
 
 type ClusterActionID struct {
 	id string
 }
 
-func ClusterAction(cluster ClusterID, name string, f, cleanup types.ClusterAction, deps ...ResourceDependencies) ClusterActionID {
-	actionID := newID()
-	state.clusterActions[actionID] = f
+type ClusterAction func(context.Context, Cluster) error
 
-	node := specNode{id: actionID, dependsOn: []string{cluster.id}, specAction: &clusterActionAction{id: actionID, clusterID: cluster.id, cleanup: cleanup, name: name}}
+func (g Gingk8s) ClusterAction(cluster ClusterID, name string, f, cleanup ClusterAction, deps ...ResourceDependencies) ClusterActionID {
+	actionID := newID()
+	g.clusterActions[actionID] = f
+
+	node := specNode{state: g.specState, id: actionID, dependsOn: []string{cluster.id}, specAction: &clusterActionAction{id: actionID, clusterID: cluster.id, cleanup: cleanup, name: name}}
 
 	for _, deps := range deps {
 		node.dependsOn = append(node.dependsOn, deps.allIDs(cluster.id)...)
 	}
 
-	state.setup = append(state.setup, &node)
+	g.setup = append(g.setup, &node)
 
 	return ClusterActionID{id: actionID}
 
@@ -33,19 +33,19 @@ type clusterActionAction struct {
 	id        string
 	name      string
 	clusterID string
-	cleanup   types.ClusterAction
+	cleanup   ClusterAction
 }
 
-func (c *clusterActionAction) Setup(ctx context.Context) error {
-	if state.opts.NoDeps {
+func (c *clusterActionAction) Setup(ctx context.Context, state *specState) error {
+	if state.suite.opts.NoDeps {
 		return nil
 	}
 	defer ByStartStop(fmt.Sprintf("Executing action %s", c.name))()
-	return state.clusterActions[c.id](ctx, state.clusters[c.clusterID])
+	return state.clusterActions[c.id](ctx, state.getCluster(c.clusterID))
 }
 
-func (c *clusterActionAction) Cleanup(ctx context.Context) {
-	if state.opts.NoSuiteCleanup {
+func (c *clusterActionAction) Cleanup(ctx context.Context, state *specState) {
+	if state.suite.opts.NoSuiteCleanup {
 		return
 	}
 	if c.cleanup == nil {
@@ -53,5 +53,5 @@ func (c *clusterActionAction) Cleanup(ctx context.Context) {
 	}
 
 	defer ByStartStop(fmt.Sprintf("Undoing action %s", c.name))()
-	Expect(c.cleanup(ctx, state.clusters[c.clusterID])).To(Succeed())
+	Expect(c.cleanup(ctx, state.getCluster(c.clusterID))).To(Succeed())
 }

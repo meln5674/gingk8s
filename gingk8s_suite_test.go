@@ -4,8 +4,7 @@ import (
 	"context"
 	"testing"
 
-	. "github.com/meln5674/gingk8s"
-	gingk8s "github.com/meln5674/gingk8s/pkg/gingk8s"
+	"github.com/meln5674/gingk8s"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -16,9 +15,11 @@ func TestGingk8s(t *testing.T) {
 	RunSpecs(t, "Gingk8s Suite")
 }
 
+var g gingk8s.Gingk8s
 var _ = BeforeSuite(func(ctx context.Context) {
+	g = gingk8s.ForSuite()
 	// Gingk8sOptions sets global options for the suite
-	Gingk8sOptions(gingk8s.SuiteOpts{
+	g.Options(gingk8s.SuiteOpts{
 		// If you want to leave your suite resources running after the suite finishes,
 		// uncomment this line. You'll need to manually delete the resulting cluster.
 		// NoSuiteCleanup: true,
@@ -26,14 +27,14 @@ var _ = BeforeSuite(func(ctx context.Context) {
 
 	// CustomImage and CustomImages register custom images that must be built as part of the
 	// suite
-	customImageIDs := CustomImages(&customWordpressImage)
+	customImageIDs := g.CustomImages(&customWordpressImage)
 	// ThirdPartyImage and ThirdPartyImages register pre-built images that (by default),
 	// must be pulled from a removte source
-	thirdPartyImageIDs := ThirdPartyImages(&mariadbImage)
+	thirdPartyImageIDs := g.ThirdPartyImages(&mariadbImage)
 
 	// Cluster registers a cluster that must be created, as well as all images that must be loaded
 	// onto it
-	clusterID := Cluster(&cluster, ClusterDependencies{
+	clusterID := g.Cluster(&cluster, gingk8s.ClusterDependencies{
 		CustomImages:     customImageIDs,
 		ThirdPartyImages: thirdPartyImageIDs,
 	})
@@ -41,14 +42,14 @@ var _ = BeforeSuite(func(ctx context.Context) {
 	// Release, Manifests, and ClusterAction register steps to be taken once a cluster is ready,
 	// as well as any actions that must succeed, such as waiting for a set of images to finish
 	// loading
-	Release(clusterID, &myWordpress, ResourceDependencies{
+	g.Release(clusterID, &myWordpress, gingk8s.ResourceDependencies{
 		CustomImages:     customImageIDs,
 		ThirdPartyImages: thirdPartyImageIDs,
 	})
 
 	// Gingk8sSetup is the entrypoint to Gingk8s, call it once your suite is fully registered to
 	// build your environment to prepare for your tests
-	Gingk8sSetup(ctx)
+	g.Setup(ctx)
 })
 
 var (

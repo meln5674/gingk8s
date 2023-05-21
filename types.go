@@ -107,8 +107,6 @@ type WaitFor struct {
 	Flags    []string
 }
 
-type ClusterAction func(context.Context, Cluster) error
-
 type ResourceReference struct {
 	Namespace string
 	Kind      string

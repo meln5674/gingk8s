@@ -6,7 +6,7 @@ import (
 
 	. "github.com/onsi/gomega"
 
-	types "github.com/meln5674/gingk8s/pkg/gingk8s"
+	"github.com/meln5674/gosh"
 )
 
 type ClusterID struct {
@@ -18,25 +18,25 @@ type ClusterDependencies struct {
 	CustomImages     []CustomImageID
 }
 
-func Cluster(cluster types.Cluster, deps ...ClusterDependencies) ClusterID {
+func (g Gingk8s) Cluster(cluster Cluster, deps ...ClusterDependencies) ClusterID {
 	clusterID := newID()
-	state.clusters[clusterID] = cluster
-	state.clusterThirdPartyLoads[clusterID] = make(map[string]string)
-	state.clusterCustomLoads[clusterID] = make(map[string]string)
-	clusterNode := specNode{id: clusterID, specAction: &createClusterAction{id: clusterID}}
+	g.clusters[clusterID] = cluster
+	g.clusterThirdPartyLoads[clusterID] = make(map[string]string)
+	g.clusterCustomLoads[clusterID] = make(map[string]string)
+	clusterNode := specNode{state: g.specState, id: clusterID, specAction: &createClusterAction{id: clusterID}}
 	for _, deps := range deps {
 		for _, image := range deps.ThirdPartyImages {
 			loadID := newID()
-			state.clusterThirdPartyLoads[clusterID][image.id] = loadID
-			state.setup = append(state.setup, &specNode{id: loadID, dependsOn: []string{clusterID, image.id}, specAction: &loadThirdPartyImageAction{id: loadID, imageID: image.id, clusterID: clusterID}})
+			g.clusterThirdPartyLoads[clusterID][image.id] = loadID
+			g.setup = append(g.setup, &specNode{state: g.specState, id: loadID, dependsOn: []string{clusterID, image.id}, specAction: &loadThirdPartyImageAction{id: loadID, imageID: image.id, clusterID: clusterID}})
 		}
 		for _, image := range deps.CustomImages {
 			loadID := newID()
-			state.clusterCustomLoads[clusterID][image.id] = loadID
-			state.setup = append(state.setup, &specNode{id: loadID, dependsOn: []string{clusterID, image.id}, specAction: &loadCustomImageAction{id: loadID, imageID: image.id, clusterID: clusterID}})
+			g.clusterCustomLoads[clusterID][image.id] = loadID
+			g.setup = append(g.setup, &specNode{state: g.specState, id: loadID, dependsOn: []string{clusterID, image.id}, specAction: &loadCustomImageAction{id: loadID, imageID: image.id, clusterID: clusterID}})
 		}
 	}
-	state.setup = append(state.setup, &clusterNode)
+	g.setup = append(g.setup, &clusterNode)
 
 	return ClusterID{id: clusterID}
 }
@@ -45,15 +45,38 @@ type createClusterAction struct {
 	id string
 }
 
-func (c *createClusterAction) Setup(ctx context.Context) error {
+func (c *createClusterAction) Setup(ctx context.Context, state *specState) error {
 	defer ByStartStop("Creating cluster")()
 	return state.clusters[c.id].Create(ctx, true).Run()
 }
 
-func (c *createClusterAction) Cleanup(ctx context.Context) {
-	if state.opts.NoSuiteCleanup {
+func (c *createClusterAction) Cleanup(ctx context.Context, state *specState) {
+	if state.suite.opts.NoSuiteCleanup {
 		return
 	}
 	defer ByStartStop(fmt.Sprintf("Deleting cluster"))()
 	Expect(state.clusters[c.id].Delete(ctx).Run()).To(Succeed())
+}
+
+// KubernetesConnection defines a connection to a kubernetes API server
+type KubernetesConnection struct {
+	// Kubeconfig is the path to a kubeconfig file. If blank, the default loading rules are used.
+	Kubeconfig string
+	// Context is the name of the context within the kubeconfig file to use. If blank, the current context is used.
+	Context string
+}
+
+// Cluster knows how to manage a temporary cluster
+type Cluster interface {
+	// Create creates a cluster. If skipExisting is true, it will not fail if the cluster already exists
+	Create(ctx context.Context, skipExisting bool) gosh.Commander
+	// GetConnection returns the kubeconfig, context, etc, to use to connect to the cluster's api server.
+	// GetConnection must not fail, so any potentially failing operations must be done during Create()
+	GetConnection() *KubernetesConnection
+	// GetTempPath returns the path to a file or directory to use for temporary operations against this cluster
+	GetTempPath(group string, path string) string
+	// LoadImages loads a set of images of a given format from.
+	LoadImages(ctx context.Context, from Images, format ImageFormat, images []string) gosh.Commander
+	// Delete deletes the cluster. Delete should not fail if the cluster exists.
+	Delete(ctx context.Context) gosh.Commander
 }
