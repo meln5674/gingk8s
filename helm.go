@@ -20,14 +20,20 @@ type ReleaseID struct {
 	id string
 }
 
-func (g Gingk8s) Release(cluster ClusterID, release *HelmRelease, deps ...ResourceDependencies) ReleaseID {
+func (r ReleaseID) AddResourceDependency(dep *ResourceDependencies) {
+	dep.Releases = append(dep.Releases, r)
+}
+
+func (g Gingk8s) Release(cluster ClusterID, release *HelmRelease, deps ...ResourceDependency) ReleaseID {
 	releaseID := newID()
 	g.releases[releaseID] = release
 
-	node := specNode{state: g.specState, id: releaseID, dependsOn: []string{cluster.id}, specAction: &releaseAction{id: releaseID, clusterID: cluster.id}}
-
-	for _, deps := range deps {
-		node.dependsOn = append(node.dependsOn, deps.allIDs(cluster.id)...)
+	dependsOn := append([]string{cluster.id}, forResourceDependencies(deps...).allIDs(cluster.id)...)
+	node := specNode{
+		state:      g.specState,
+		id:         releaseID,
+		dependsOn:  dependsOn,
+		specAction: &releaseAction{id: releaseID, clusterID: cluster.id, g: g},
 	}
 
 	g.setup = append(g.setup, &node)
@@ -38,6 +44,7 @@ func (g Gingk8s) Release(cluster ClusterID, release *HelmRelease, deps ...Resour
 type releaseAction struct {
 	id        string
 	clusterID string
+	g         Gingk8s
 }
 
 func (r *releaseAction) Setup(ctx context.Context, state *specState) error {
@@ -45,7 +52,7 @@ func (r *releaseAction) Setup(ctx context.Context, state *specState) error {
 		return nil
 	}
 	defer ByStartStop(fmt.Sprintf("Creating helm release %s", state.releases[r.id].Name))()
-	return state.suite.opts.Helm.InstallOrUpgrade(ctx, state.clusters[r.clusterID], state.releases[r.id]).Run()
+	return state.suite.opts.Helm.InstallOrUpgrade(r.g, ctx, state.getCluster(r.clusterID), state.releases[r.id]).Run()
 }
 
 func (r *releaseAction) Cleanup(ctx context.Context, state *specState) {
@@ -54,7 +61,7 @@ func (r *releaseAction) Cleanup(ctx context.Context, state *specState) {
 	}
 
 	defer ByStartStop(fmt.Sprintf("Deleting helm release %s", state.releases[r.id].Name))()
-	Expect(state.suite.opts.Helm.Delete(ctx, state.clusters[r.clusterID], state.releases[r.id], true).Run()).To(Succeed())
+	Expect(state.suite.opts.Helm.Delete(ctx, state.getCluster(r.clusterID), state.releases[r.id], true).Run()).To(Succeed())
 }
 
 // HelmRepo represents a repository to pull helm charts from
@@ -134,7 +141,11 @@ type HelmRelease struct {
 	UpgradeFlags []string
 	// DeleteFlags is a set of extra arguments to pass to helm delete
 	DeleteFlags []string
-	Wait        []WaitFor
+	// Wait is a set of resouces to wait for once the release has completed before considering the release to be complete
+	Wait []WaitFor
+	// NoWait, if true, prevents gingk8s from waiting for the helm release to become healthy (e.g. --wait).
+	// This is useful is a release is expected to be in a failing state until an event in a child spec takes place
+	NoWait bool
 }
 
 // Helm knows how to install and uninstall helm charts
@@ -142,7 +153,7 @@ type Helm interface {
 	// AddRepo adds a repo that only this HelmReleaser can use
 	AddRepo(ctx context.Context, repo *HelmRepo) gosh.Commander
 	// InstallOrUpgrade upgrades or installs a release into a cluster
-	InstallOrUpgrade(ctx context.Context, cluster Cluster, release *HelmRelease) gosh.Commander
+	InstallOrUpgrade(g Gingk8s, ctx context.Context, cluster Cluster, release *HelmRelease) gosh.Commander
 	// Delete removes a release from a cluster. If skipNotExists is true, this should not fail if the release does not exist.
 	Delete(ctx context.Context, cluster Cluster, release *HelmRelease, skipNotExists bool) gosh.Commander
 }

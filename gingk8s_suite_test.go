@@ -34,18 +34,18 @@ var _ = BeforeSuite(func(ctx context.Context) {
 
 	// Cluster registers a cluster that must be created, as well as all images that must be loaded
 	// onto it
-	clusterID := g.Cluster(&cluster, gingk8s.ClusterDependencies{
-		CustomImages:     customImageIDs,
-		ThirdPartyImages: thirdPartyImageIDs,
-	})
+	clusterID := g.Cluster(&cluster,
+		customImageIDs,
+		thirdPartyImageIDs,
+	)
 
 	// Release, Manifests, and ClusterAction register steps to be taken once a cluster is ready,
 	// as well as any actions that must succeed, such as waiting for a set of images to finish
 	// loading
-	g.Release(clusterID, &myWordpress, gingk8s.ResourceDependencies{
-		CustomImages:     customImageIDs,
-		ThirdPartyImages: thirdPartyImageIDs,
-	})
+	g.Release(clusterID, &myWordpress,
+		customImageIDs,
+		thirdPartyImageIDs,
+	)
 
 	// Gingk8sSetup is the entrypoint to Gingk8s, call it once your suite is fully registered to
 	// build your environment to prepare for your tests

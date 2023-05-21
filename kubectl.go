@@ -25,6 +25,7 @@ var (
 )
 
 func (g Gingk8s) Kubectl(ctx context.Context, cluster Cluster, args ...string) *gosh.Cmd {
+	fmt.Printf("g: %#v\n", g)
 	return g.suite.opts.Kubectl.Kubectl(ctx, cluster, args).WithStreams(GinkgoOutErr)
 }
 
@@ -88,29 +89,25 @@ type KubectlWatcher struct {
 	cmd   *gosh.Cmd
 }
 
-func (k *KubectlWatcher) Setup(g Gingk8s) ClusterAction {
-	return func(ctx context.Context, cluster Cluster) error {
-		args := []string{"get", "-w"}
-		if k.Name != "" {
-			args = append(args, fmt.Sprintf("%s/%s", k.Kind, k.Name))
-		} else {
-			args = append(args, k.Kind)
-		}
-		args = append(args, k.Flags...)
-		k.cmd = g.Kubectl(ctx, cluster, args...)
-		return k.cmd.Start()
+func (k *KubectlWatcher) Setup(g Gingk8s, ctx context.Context, cluster Cluster) error {
+	args := []string{"get", "-w"}
+	if k.Name != "" {
+		args = append(args, fmt.Sprintf("%s/%s", k.Kind, k.Name))
+	} else {
+		args = append(args, k.Kind)
 	}
+	args = append(args, k.Flags...)
+	k.cmd = g.Kubectl(ctx, cluster, args...)
+	return k.cmd.Start()
 }
 
-func (k *KubectlWatcher) Cleanup(g Gingk8s) ClusterAction {
-	return func(ctx context.Context, cluster Cluster) error {
-		err := k.cmd.Kill()
-		if err != nil {
-			return err
-		}
-		k.cmd.Wait()
-		return nil
+func (k *KubectlWatcher) Cleanup(g Gingk8s, ctx context.Context, cluster Cluster) error {
+	err := k.cmd.Kill()
+	if err != nil {
+		return err
 	}
+	k.cmd.Wait()
+	return nil
 }
 
 type KubectlPortForwarder struct {
@@ -123,46 +120,67 @@ type KubectlPortForwarder struct {
 	stopped     chan struct{}
 }
 
-func (k *KubectlPortForwarder) Setup(g Gingk8s) ClusterAction {
-	return func(ctx context.Context, cluster Cluster) error {
-		k.stop = make(chan struct{})
-		k.stopped = make(chan struct{})
-		go func() {
-			defer func() { close(k.stopped) }()
-			ref := k.Kind
-			if ref != "" {
-				ref += "/"
+func (k *KubectlPortForwarder) Setup(g Gingk8s, ctx context.Context, cluster Cluster) error {
+	k.stop = make(chan struct{})
+	k.stopped = make(chan struct{})
+	go func() {
+		defer func() { close(k.stopped) }()
+		ref := k.Kind
+		if ref != "" {
+			ref += "/"
+		}
+		ref += k.Name
+		args := []string{"port-forward", ref}
+		args = append(args, k.Ports...)
+		args = append(args, k.Flags...)
+		for {
+			err := g.Kubectl(ctx, cluster, args...).Run()
+			if errors.Is(err, context.Canceled) {
+				return
 			}
-			ref += k.Name
-			args := []string{"port-forward", ref}
-			args = append(args, k.Ports...)
-			args = append(args, k.Flags...)
-			for {
-				err := g.Kubectl(ctx, cluster, args...).Run()
-				if errors.Is(err, context.Canceled) {
-					return
-				}
-				_, stop := <-k.stop
-				if stop {
-					return
-				}
-				GinkgoWriter.Printf("Port-forward for %s failed, waiting %s before retrying: %v\n", ref, k.RetryPeriod.String(), err)
+			_, stop := <-k.stop
+			if stop {
+				return
 			}
-		}()
-		return nil
-	}
+			GinkgoWriter.Printf("Port-forward for %s failed, waiting %s before retrying: %v\n", ref, k.RetryPeriod.String(), err)
+		}
+	}()
+	return nil
 }
 
-func (k *KubectlPortForwarder) Cleanup(g Gingk8s) ClusterAction {
-	return func(ctx context.Context, cluster Cluster) error {
-		close(k.stop)
-		<-k.stopped
-		return nil
+func (k *KubectlPortForwarder) Cleanup(g Gingk8s, ctx context.Context, cluster Cluster) error {
+	close(k.stop)
+	<-k.stopped
+	return nil
+}
+
+func (g Gingk8s) KubectlWait(ctx context.Context, cluster Cluster, fors ...WaitFor) gosh.Commander {
+	waits := []gosh.Commander{}
+	for _, wait := range fors {
+		args := []string{"wait", wait.Resource}
+		for k, v := range wait.For {
+			args = append(args, "--for", k+"="+v)
+		}
+		waits = append(waits, g.suite.opts.Kubectl.Kubectl(ctx, cluster, args))
 	}
+	return gosh.FanOut(waits...)
+}
+
+func (g Gingk8s) KubectlRollout(ctx context.Context, cluster Cluster, ref ResourceReference) gosh.Commander {
+	argsRestart := []string{"rollout", "restart", fmt.Sprintf("%s/%s", ref.Kind, ref.Name)}
+	argsStatus := []string{"rollout", "status", fmt.Sprintf("%s/%s", ref.Kind, ref.Name)}
+	if ref.Namespace != "" {
+		argsRestart = append(argsRestart, "--namespace", ref.Namespace)
+		argsStatus = append(argsStatus, "--namespace", ref.Namespace)
+	}
+	return gosh.And(
+		g.Kubectl(ctx, cluster, argsRestart...),
+		g.Kubectl(ctx, cluster, argsStatus...),
+	)
 }
 
 func (g Gingk8s) WaitForResourceExists(pollPeriod time.Duration, refs ...ResourceReference) ClusterAction {
-	return func(ctx context.Context, cluster Cluster) error {
+	return func(g Gingk8s, ctx context.Context, cluster Cluster) error {
 		for _, ref := range refs {
 			for {
 				args := []string{"get", ref.Kind, ref.Name}
@@ -220,7 +238,7 @@ func (k *KubectlCommand) Kubectl(ctx context.Context, cluster Cluster, args []st
 }
 
 // CreateOrUpates implements Manifests
-func (k *KubectlCommand) CreateOrUpdate(ctx context.Context, cluster Cluster, manifests *KubernetesManifests) gosh.Commander {
+func (k *KubectlCommand) CreateOrUpdate(g Gingk8s, ctx context.Context, cluster Cluster, manifests *KubernetesManifests) gosh.Commander {
 	applies := []gosh.Commander{}
 	applyFileArgs := func(path string, recursive bool) []string {
 		args := []string{"apply", "--filename", path}
@@ -245,9 +263,9 @@ func (k *KubectlCommand) CreateOrUpdate(ctx context.Context, cluster Cluster, ma
 							var resolved interface{}
 							switch v := obj.(type) {
 							case Object:
-								resolved, err = resolveRObject(ctx, cluster, reflect.ValueOf(v))
+								resolved, err = resolveRObject(g, ctx, cluster, reflect.ValueOf(v))
 							case NestedObject:
-								resolved, err = resolveRNestedObject(ctx, cluster, reflect.ValueOf(v))
+								resolved, err = resolveRNestedObject(g, ctx, cluster, reflect.ValueOf(v))
 							default:
 								resolved = v
 							}
@@ -297,7 +315,7 @@ func (k *KubectlCommand) CreateOrUpdate(ctx context.Context, cluster Cluster, ma
 }
 
 // Delete implements Manifests
-func (k *KubectlCommand) Delete(ctx context.Context, cluster Cluster, manifests *KubernetesManifests) gosh.Commander {
+func (k *KubectlCommand) Delete(g Gingk8s, ctx context.Context, cluster Cluster, manifests *KubernetesManifests) gosh.Commander {
 	// TODO: this could be refactored
 	cmds := []gosh.Commander{}
 	applyFileArgs := func(path string, recursive bool) []string {

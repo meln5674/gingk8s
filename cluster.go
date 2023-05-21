@@ -13,28 +13,22 @@ type ClusterID struct {
 	id string
 }
 
-type ClusterDependencies struct {
-	ThirdPartyImages []ThirdPartyImageID
-	CustomImages     []CustomImageID
-}
-
-func (g Gingk8s) Cluster(cluster Cluster, deps ...ClusterDependencies) ClusterID {
+func (g Gingk8s) Cluster(cluster Cluster, deps ...ClusterDependency) ClusterID {
 	clusterID := newID()
 	g.clusters[clusterID] = cluster
 	g.clusterThirdPartyLoads[clusterID] = make(map[string]string)
 	g.clusterCustomLoads[clusterID] = make(map[string]string)
 	clusterNode := specNode{state: g.specState, id: clusterID, specAction: &createClusterAction{id: clusterID}}
-	for _, deps := range deps {
-		for _, image := range deps.ThirdPartyImages {
-			loadID := newID()
-			g.clusterThirdPartyLoads[clusterID][image.id] = loadID
-			g.setup = append(g.setup, &specNode{state: g.specState, id: loadID, dependsOn: []string{clusterID, image.id}, specAction: &loadThirdPartyImageAction{id: loadID, imageID: image.id, clusterID: clusterID}})
-		}
-		for _, image := range deps.CustomImages {
-			loadID := newID()
-			g.clusterCustomLoads[clusterID][image.id] = loadID
-			g.setup = append(g.setup, &specNode{state: g.specState, id: loadID, dependsOn: []string{clusterID, image.id}, specAction: &loadCustomImageAction{id: loadID, imageID: image.id, clusterID: clusterID}})
-		}
+	allDeps := *forClusterDependencies(deps...)
+	for _, image := range allDeps.ThirdPartyImages {
+		loadID := newID()
+		g.clusterThirdPartyLoads[clusterID][image.id] = loadID
+		g.setup = append(g.setup, &specNode{state: g.specState, id: loadID, dependsOn: []string{clusterID, image.id}, specAction: &loadThirdPartyImageAction{id: loadID, imageID: image.id, clusterID: clusterID}})
+	}
+	for _, image := range allDeps.CustomImages {
+		loadID := newID()
+		g.clusterCustomLoads[clusterID][image.id] = loadID
+		g.setup = append(g.setup, &specNode{state: g.specState, id: loadID, dependsOn: []string{clusterID, image.id}, specAction: &loadCustomImageAction{id: loadID, imageID: image.id, clusterID: clusterID}})
 	}
 	g.setup = append(g.setup, &clusterNode)
 

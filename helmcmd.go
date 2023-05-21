@@ -52,8 +52,11 @@ func (h *HelmCommand) AddRepo(ctx context.Context, repo *HelmRepo) gosh.Commande
 }
 
 // InstallOrUpgrade implements Helm
-func (h *HelmCommand) InstallOrUpgrade(ctx context.Context, cluster Cluster, release *HelmRelease) gosh.Commander {
-	args := []string{"upgrade", "--install", "--wait", release.Name, release.Chart.Fullname()}
+func (h *HelmCommand) InstallOrUpgrade(g Gingk8s, ctx context.Context, cluster Cluster, release *HelmRelease) gosh.Commander {
+	args := []string{"upgrade", "--install", release.Name, release.Chart.Fullname()}
+	if !release.NoWait {
+		args = append(args, "--wait")
+	}
 	if !release.Chart.IsLocal() && release.Chart.Version != "" {
 		args = append(args, "--version", release.Chart.Version)
 	}
@@ -65,7 +68,7 @@ func (h *HelmCommand) InstallOrUpgrade(ctx context.Context, cluster Cluster, rel
 	}
 	for k, v := range release.Set {
 		s := strings.Builder{}
-		err := valueString(ctx, cluster, &s, v)
+		err := valueString(g, ctx, cluster, &s, v)
 		if err != nil {
 			panic(err)
 		}
@@ -107,7 +110,7 @@ func (h *HelmCommand) InstallOrUpgrade(ctx context.Context, cluster Cluster, rel
 			}
 			err = func() error {
 				for ix, v := range release.Values {
-					resolved, err := resolveNestedObject(ctx, cluster, v)
+					resolved, err := resolveNestedObject(g, ctx, cluster, v)
 					if err != nil {
 						return err
 					}

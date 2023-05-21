@@ -89,12 +89,63 @@ func (g *Gingk8s) Setup(ctx context.Context) {
 
 	ex := godag.Executor[string, *specNode]{}
 
-	for ix := range g.setup {
-		g.setup[ix].ctx = ctx
-		GinkgoWriter.Printf("Node: %#v\n", g.setup[ix])
+	GinkgoWriter.Printf("spec: %#v\n", g.specState)
+
+	nodes := make([]*specNode, len(g.setup))
+	copy(nodes, g.setup)
+	if g.parent != nil {
+		noopIDs := make(
+			[]string,
+			0,
+			len(g.parent.clusters)+
+				len(g.parent.thirdPartyImages)+
+				len(g.parent.customImages)+
+				len(g.parent.releases)+
+				len(g.parent.clusterActions)+
+				len(g.parent.manifests),
+		)
+		for id := range g.parent.clusters {
+			noopIDs = append(noopIDs, id)
+			for _, id := range g.parent.clusterCustomLoads[id] {
+				noopIDs = append(noopIDs, id)
+			}
+			for _, id := range g.parent.clusterThirdPartyLoads[id] {
+				noopIDs = append(noopIDs, id)
+			}
+		}
+		for id := range g.parent.thirdPartyImages {
+			noopIDs = append(noopIDs, id)
+		}
+		for id := range g.parent.customImages {
+			noopIDs = append(noopIDs, id)
+		}
+		for id := range g.parent.releases {
+			noopIDs = append(noopIDs, id)
+		}
+		for id := range g.parent.manifests {
+			noopIDs = append(noopIDs, id)
+		}
+		for id := range g.parent.clusterActions {
+			noopIDs = append(noopIDs, id)
+		}
+
+		for _, id := range noopIDs {
+			nodes = append(nodes, &specNode{
+				id:         id,
+				specAction: &specNoop{},
+				state:      g.specState,
+			})
+		}
+
+		GinkgoWriter.Printf("Adding dummy DAG ids: %#v\n", noopIDs)
 	}
 
-	dag, err := godag.Build[string, *specNode](g.setup)
+	for ix := range nodes {
+		GinkgoWriter.Printf("Node: %#v\n", nodes[ix])
+		nodes[ix].ctx = ctx
+	}
+
+	dag, err := godag.Build[string, *specNode](nodes)
 	Expect(err).ToNot(HaveOccurred())
 
 	Expect(ex.Run(dag, godag.Options[string]{})).To(Succeed())

@@ -23,15 +23,29 @@ type ThirdPartyImageID struct {
 	id string
 }
 
-type CustomImageID struct {
-	id string
+func (t ThirdPartyImageID) AddResourceDependency(dep *ResourceDependencies) {
+	dep.ThirdPartyImages = append(dep.ThirdPartyImages, t)
+}
+
+func (t ThirdPartyImageID) AddClusterDependency(dep *ClusterDependencies) {
+	dep.ThirdPartyImages = append(dep.ThirdPartyImages, t)
 }
 
 func (g Gingk8s) ThirdPartyImage(image *ThirdPartyImage) ThirdPartyImageID {
 	return g.ThirdPartyImages(image)[0]
 }
 
-func (g Gingk8s) ThirdPartyImages(images ...*ThirdPartyImage) []ThirdPartyImageID {
+type ThirdPartyImageIDs []ThirdPartyImageID
+
+func (t ThirdPartyImageIDs) AddResourceDependency(dep *ResourceDependencies) {
+	dep.ThirdPartyImages = append(dep.ThirdPartyImages, t...)
+}
+
+func (t ThirdPartyImageIDs) AddClusterDependency(dep *ClusterDependencies) {
+	dep.ThirdPartyImages = append(dep.ThirdPartyImages, t...)
+}
+
+func (g Gingk8s) ThirdPartyImages(images ...*ThirdPartyImage) ThirdPartyImageIDs {
 	newIDs := []ThirdPartyImageID{}
 	for ix := range images {
 		newID := newID()
@@ -42,11 +56,33 @@ func (g Gingk8s) ThirdPartyImages(images ...*ThirdPartyImage) []ThirdPartyImageI
 	return newIDs
 }
 
+type CustomImageID struct {
+	id string
+}
+
+func (t CustomImageID) AddResourceDependency(dep *ResourceDependencies) {
+	dep.CustomImages = append(dep.CustomImages, t)
+}
+
+func (t CustomImageID) AddClusterDependency(dep *ClusterDependencies) {
+	dep.CustomImages = append(dep.CustomImages, t)
+}
+
 func (g Gingk8s) CustomImage(image *CustomImage) CustomImageID {
 	return g.CustomImages(image)[0]
 }
 
-func (g Gingk8s) CustomImages(images ...*CustomImage) []CustomImageID {
+type CustomImageIDs []CustomImageID
+
+func (t CustomImageIDs) AddResourceDependency(dep *ResourceDependencies) {
+	dep.CustomImages = append(dep.CustomImages, t...)
+}
+
+func (t CustomImageIDs) AddClusterDependency(dep *ClusterDependencies) {
+	dep.CustomImages = append(dep.CustomImages, t...)
+}
+
+func (g Gingk8s) CustomImages(images ...*CustomImage) CustomImageIDs {
 	newIDs := []CustomImageID{}
 	for ix := range images {
 		newID := newID()

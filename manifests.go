@@ -14,13 +14,20 @@ type ManifestsID struct {
 	id string
 }
 
-func (g Gingk8s) Manifests(cluster ClusterID, manifests *KubernetesManifests, deps ...ResourceDependencies) ManifestsID {
+func (m ManifestsID) AddResourceDependency(dep *ResourceDependencies) {
+	dep.Manifests = append(dep.Manifests, m)
+}
+
+func (g Gingk8s) Manifests(cluster ClusterID, manifests *KubernetesManifests, deps ...ResourceDependency) ManifestsID {
 	manifestID := newID()
 	g.manifests[manifestID] = manifests
 
-	node := specNode{state: g.specState, id: manifestID, dependsOn: []string{cluster.id}, specAction: &manifestsAction{id: manifestID, clusterID: cluster.id}}
-	for _, deps := range deps {
-		node.dependsOn = append(node.dependsOn, deps.allIDs(cluster.id)...)
+	dependsOn := append([]string{cluster.id}, forResourceDependencies(deps...).allIDs(cluster.id)...)
+	node := specNode{
+		state:      g.specState,
+		id:         manifestID,
+		dependsOn:  dependsOn,
+		specAction: &manifestsAction{id: manifestID, clusterID: cluster.id, g: g},
 	}
 
 	g.setup = append(g.setup, &node)
@@ -31,6 +38,7 @@ func (g Gingk8s) Manifests(cluster ClusterID, manifests *KubernetesManifests, de
 type manifestsAction struct {
 	id        string
 	clusterID string
+	g         Gingk8s
 }
 
 func (m *manifestsAction) Setup(ctx context.Context, state *specState) error {
@@ -39,7 +47,7 @@ func (m *manifestsAction) Setup(ctx context.Context, state *specState) error {
 		return nil
 	}
 	defer ByStartStop(fmt.Sprintf("Creating manifest set %s", state.manifests[m.id].Name))()
-	return state.suite.opts.Manifests.CreateOrUpdate(ctx, state.clusters[m.clusterID], state.manifests[m.id]).Run()
+	return state.suite.opts.Manifests.CreateOrUpdate(m.g, ctx, state.getCluster(m.clusterID), state.manifests[m.id]).Run()
 }
 
 func (m *manifestsAction) Cleanup(ctx context.Context, state *specState) {
@@ -47,7 +55,7 @@ func (m *manifestsAction) Cleanup(ctx context.Context, state *specState) {
 		return
 	}
 	defer ByStartStop("Deleteing a set of manifests")()
-	Expect(state.suite.opts.Manifests.Delete(ctx, state.clusters[m.clusterID], state.manifests[m.id]).Run()).To(Succeed())
+	Expect(state.suite.opts.Manifests.Delete(m.g, ctx, state.getCluster(m.clusterID), state.manifests[m.id]).Run()).To(Succeed())
 }
 
 var (
@@ -78,7 +86,7 @@ type KubernetesManifests struct {
 // Manifests knows how to manage raw kubernetes manifests
 type Manifests interface {
 	// CreateOrUpdate creates or updates a set of manifests
-	CreateOrUpdate(ctx context.Context, cluster Cluster, manifests *KubernetesManifests) gosh.Commander
+	CreateOrUpdate(g Gingk8s, ctx context.Context, cluster Cluster, manifests *KubernetesManifests) gosh.Commander
 	// Delete removes a set of manifests
-	Delete(ctx context.Context, cluster Cluster, manifests *KubernetesManifests) gosh.Commander
+	Delete(g Gingk8s, ctx context.Context, cluster Cluster, manifests *KubernetesManifests) gosh.Commander
 }

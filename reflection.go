@@ -8,16 +8,24 @@ import (
 	"strings"
 )
 
-func scalarString(ctx context.Context, cluster Cluster, s *strings.Builder, v Value) error {
+const (
+	badFuncErrFmt = `func() values provided to Set must return a compliant type or a compliant type and an error, and must have one of the following signatures.
+(context.Context)
+(context.Context, gingk8s.Cluster)
+(gingk8s.Gingk8s, context.Context, gingk8s.Cluster)
+Instead, got %v`
+)
+
+func scalarString(g Gingk8s, ctx context.Context, cluster Cluster, s *strings.Builder, v Value) error {
 	s.WriteString(strings.ReplaceAll(fmt.Sprintf("%v", v), ",", `\,`))
 	return nil
 }
 
-func resolveRArray(ctx context.Context, cluster Cluster, val reflect.Value) ([]interface{}, error) {
+func resolveRArray(g Gingk8s, ctx context.Context, cluster Cluster, val reflect.Value) ([]interface{}, error) {
 	var err error
 	out := make([]interface{}, val.Len())
 	for ix := 0; ix < val.Len(); ix++ {
-		out[ix], err = resolveRValue(ctx, cluster, val.Index(ix))
+		out[ix], err = resolveRValue(g, ctx, cluster, val.Index(ix))
 		if err != nil {
 			return nil, err
 		}
@@ -25,11 +33,11 @@ func resolveRArray(ctx context.Context, cluster Cluster, val reflect.Value) ([]i
 	return out, nil
 }
 
-func resolveRNestedArray(ctx context.Context, cluster Cluster, val reflect.Value) ([]interface{}, error) {
+func resolveRNestedArray(g Gingk8s, ctx context.Context, cluster Cluster, val reflect.Value) ([]interface{}, error) {
 	var err error
 	out := make([]interface{}, val.Len())
 	for ix := 0; ix < val.Len(); ix++ {
-		out[ix], err = resolveRNestedValue(ctx, cluster, val.Index(ix))
+		out[ix], err = resolveRNestedValue(g, ctx, cluster, val.Index(ix))
 		if err != nil {
 			return nil, err
 		}
@@ -37,14 +45,14 @@ func resolveRNestedArray(ctx context.Context, cluster Cluster, val reflect.Value
 	return out, nil
 }
 
-func rarrayString(ctx context.Context, cluster Cluster, s *strings.Builder, val reflect.Value) error {
+func rarrayString(g Gingk8s, ctx context.Context, cluster Cluster, s *strings.Builder, val reflect.Value) error {
 	s.WriteString("{")
 	defer s.WriteString("}")
 	for ix := 0; ix < val.Len(); ix++ {
 		if ix != 0 {
 			s.WriteString(",")
 		}
-		err := rvalueString(ctx, cluster, s, val.Index(ix))
+		err := rvalueString(g, ctx, cluster, s, val.Index(ix))
 		if err != nil {
 			return err
 		}
@@ -68,26 +76,31 @@ func rarrayCopy(val reflect.Value) reflect.Value {
 	return val2
 }
 
-func resolveRFunc(ctx context.Context, cluster Cluster, val reflect.Value) (interface{}, error) {
+func resolveRFunc(g Gingk8s, ctx context.Context, cluster Cluster, val reflect.Value) (interface{}, error) {
 	typ := val.Type()
+	tooManyArgs := typ.NumIn() > 3
 	/*
-		tooManyArgs := typ.NumIn() > 2
 		firstArgNotContext := typ.NumIn() > 0 && !typ.In(0).AssignableTo(reflect.ValueOf(context.Context(nil)).Type())
 		secondArgNotCluster := typ.NumIn() > 1 && !typ.In(1).AssignableTo(reflect.ValueOf(Cluster(nil)).Type())
-		notEnoughReturns := typ.NumOut() == 0
-		tooManyReturns := typ.NumOut() > 2
+	*/
+	notEnoughReturns := typ.NumOut() == 0
+	tooManyReturns := typ.NumOut() > 2
+	/*
 		secondReturnNotError := typ.NumOut() == 2 && !typ.Out(1).AssignableTo(reflect.ValueOf(error(nil)).Type())
 
-		badType := tooManyArgs ||
+	*/
+	badType := tooManyArgs ||
+		/*
 			firstArgNotContext ||
 			secondArgNotCluster ||
-			notEnoughReturns ||
-			tooManyReturns ||
-			secondReturnNotError
-		if badType {
-			panic(fmt.Sprintf("func() values provided to Set must take zero arguments, a context.Context, or a context.Context and a gingk8s.Cluster, and must return a compliant type or a compliant type and an error. Instead, got %v", typ))
-		}
-	*/
+		*/
+		notEnoughReturns ||
+		tooManyReturns /* ||
+		secondReturnNotError
+		*/
+	if badType {
+		panic(fmt.Sprintf(badFuncErrFmt, typ))
+	}
 	// Go reflection is dumb, there doesn't appear to be a way to check if a function argument is an interface, so we just have to not have a nice error message
 	var in []reflect.Value
 	if typ.NumIn() > 0 {
@@ -96,6 +109,12 @@ func resolveRFunc(ctx context.Context, cluster Cluster, val reflect.Value) (inte
 	if typ.NumIn() > 1 {
 		in = append(in, reflect.ValueOf(cluster))
 	}
+	if typ.NumIn() > 2 {
+		in = append([]reflect.Value{reflect.ValueOf(g)}, in...)
+	}
+	if len(in) != typ.NumIn() {
+		panic(fmt.Errorf("t: %#v, in: %#v", typ, in))
+	}
 	out := val.Call(in)
 	if typ.NumOut() == 2 {
 		errV := out[1].Interface()
@@ -103,28 +122,32 @@ func resolveRFunc(ctx context.Context, cluster Cluster, val reflect.Value) (inte
 			return out[0].Interface(), errV.(error)
 		}
 	}
-	return resolveRValue(ctx, cluster, out[0])
+	return resolveRValue(g, ctx, cluster, out[0])
 }
-func resolveRNestedFunc(ctx context.Context, cluster Cluster, val reflect.Value) (interface{}, error) {
+func resolveRNestedFunc(g Gingk8s, ctx context.Context, cluster Cluster, val reflect.Value) (interface{}, error) {
 	typ := val.Type()
+	tooManyArgs := typ.NumIn() > 3
 	/*
-		tooManyArgs := typ.NumIn() > 2
 		firstArgNotContext := typ.NumIn() > 0 && !typ.In(0).AssignableTo(reflect.ValueOf(context.Context(nil)).Type())
 		secondArgNotCluster := typ.NumIn() > 1 && !typ.In(1).AssignableTo(reflect.ValueOf(Cluster(nil)).Type())
-		notEnoughReturns := typ.NumOut() == 0
-		tooManyReturns := typ.NumOut() > 2
+	*/
+	notEnoughReturns := typ.NumOut() == 0
+	tooManyReturns := typ.NumOut() > 2
+	/*
 		secondReturnNotError := typ.NumOut() == 2 && !typ.Out(1).AssignableTo(reflect.ValueOf(error(nil)).Type())
-
-		badType := tooManyArgs ||
+	*/
+	badType := tooManyArgs ||
+		/*
 			firstArgNotContext ||
 			secondArgNotCluster ||
-			notEnoughReturns ||
-			tooManyReturns ||
-			secondReturnNotError
-		if badType {
-			panic(fmt.Sprintf("func() values provided to Set must take zero arguments, a context.Context, or a context.Context and a gingk8s.Cluster, and must return a compliant type or a compliant type and an error. Instead, got %v", typ))
-		}
-	*/
+		*/
+		notEnoughReturns ||
+		tooManyReturns /*||
+		secondReturnNotError
+		*/
+	if badType {
+		panic(fmt.Sprintf(badFuncErrFmt, typ))
+	}
 	// Go reflection is dumb, there doesn't appear to be a way to check if a function argument is an interface, so we just have to not have a nice error message
 	var in []reflect.Value
 	if typ.NumIn() > 0 {
@@ -133,6 +156,12 @@ func resolveRNestedFunc(ctx context.Context, cluster Cluster, val reflect.Value)
 	if typ.NumIn() > 1 {
 		in = append(in, reflect.ValueOf(cluster))
 	}
+	if typ.NumIn() > 2 {
+		in = append([]reflect.Value{reflect.ValueOf(g)}, in...)
+	}
+	if len(in) != typ.NumIn() {
+		panic(fmt.Errorf("t: %#v, in: %#v", typ, in))
+	}
 	out := val.Call(in)
 	if typ.NumOut() == 2 {
 		errV := out[1].Interface()
@@ -140,17 +169,17 @@ func resolveRNestedFunc(ctx context.Context, cluster Cluster, val reflect.Value)
 			return out[0].Interface(), errV.(error)
 		}
 	}
-	return resolveRNestedValue(ctx, cluster, out[0])
+	return resolveRNestedValue(g, ctx, cluster, out[0])
 }
-func rfuncString(ctx context.Context, cluster Cluster, s *strings.Builder, val reflect.Value) error {
-	out, err := resolveRFunc(ctx, cluster, val)
+func rfuncString(g Gingk8s, ctx context.Context, cluster Cluster, s *strings.Builder, val reflect.Value) error {
+	out, err := resolveRFunc(g, ctx, cluster, val)
 	if err != nil {
 		return err
 	}
-	return valueString(ctx, cluster, s, out)
+	return valueString(g, ctx, cluster, s, out)
 }
 
-func rvalueString(ctx context.Context, cluster Cluster, s *strings.Builder, val reflect.Value) error {
+func rvalueString(g Gingk8s, ctx context.Context, cluster Cluster, s *strings.Builder, val reflect.Value) error {
 	typ := val.Type()
 	switch val.Kind() {
 	case reflect.Interface, reflect.Pointer:
@@ -158,33 +187,33 @@ func rvalueString(ctx context.Context, cluster Cluster, s *strings.Builder, val 
 			return nil
 		}
 		fmt.Printf("Deref'ing %v (%v) -> %v (%v)\n", val, typ, val.Elem(), typ.Elem())
-		return rvalueString(ctx, cluster, s, val.Elem())
+		return rvalueString(g, ctx, cluster, s, val.Elem())
 	case reflect.Array, reflect.Slice:
 		if typ.Elem().Kind() == reflect.Uint8 {
 			s.WriteString(base64.StdEncoding.EncodeToString(val.Interface().([]byte)))
 			return nil
 		}
-		return rarrayString(ctx, cluster, s, val)
+		return rarrayString(g, ctx, cluster, s, val)
 	case reflect.Func:
 		fmt.Printf("Calling %v (%v)\n", val, typ)
-		return rfuncString(ctx, cluster, s, val)
+		return rfuncString(g, ctx, cluster, s, val)
 	case reflect.Complex64, reflect.Complex128, reflect.Chan, reflect.Map, reflect.Struct, reflect.UnsafePointer:
 		panic(fmt.Errorf("Helm substitution does not support %v values (%#v). Values must be typical scalar, arrays/slices of valid types, and functions return return valid types", typ, val))
 	}
-	return scalarString(ctx, cluster, s, val)
+	return scalarString(g, ctx, cluster, s, val)
 }
-func resolveRValue(ctx context.Context, cluster Cluster, val reflect.Value) (interface{}, error) {
+func resolveRValue(g Gingk8s, ctx context.Context, cluster Cluster, val reflect.Value) (interface{}, error) {
 	typ := val.Type()
 	switch val.Kind() {
 	case reflect.Interface, reflect.Pointer:
-		return resolveRValue(ctx, cluster, val.Elem())
+		return resolveRValue(g, ctx, cluster, val.Elem())
 	case reflect.Array, reflect.Slice:
 		if typ.Elem().Kind() == reflect.Uint8 {
 			return base64.StdEncoding.EncodeToString(val.Interface().([]byte)), nil
 		}
-		return resolveRArray(ctx, cluster, val)
+		return resolveRArray(g, ctx, cluster, val)
 	case reflect.Func:
-		return resolveRFunc(ctx, cluster, val)
+		return resolveRFunc(g, ctx, cluster, val)
 	case reflect.Complex64, reflect.Complex128, reflect.Chan, reflect.Map, reflect.Struct, reflect.UnsafePointer:
 		panic(fmt.Errorf("Helm substitution does not support %v values (%#v). Values must be typical scalar, arrays/slices of valid types, and functions return return valid types", typ, val))
 		// return nil, fmt.Errorf("Helm substitution does not support %v values (%#v). Values must be typical scalar, arrays/slices of valid types, and functions return return valid types", typ, val)
@@ -192,8 +221,8 @@ func resolveRValue(ctx context.Context, cluster Cluster, val reflect.Value) (int
 	return val.Interface(), nil
 }
 
-func valueString(ctx context.Context, cluster Cluster, s *strings.Builder, v Value) error {
-	return rvalueString(ctx, cluster, s, reflect.ValueOf(v))
+func valueString(g Gingk8s, ctx context.Context, cluster Cluster, s *strings.Builder, v Value) error {
+	return rvalueString(g, ctx, cluster, s, reflect.ValueOf(v))
 }
 
 func rvalueCopy(val reflect.Value) reflect.Value {
@@ -233,12 +262,12 @@ func robjectCopy(val reflect.Value) reflect.Value {
 	return val2
 }
 
-func resolveRObject(ctx context.Context, cluster Cluster, val reflect.Value) (interface{}, error) {
+func resolveRObject(g Gingk8s, ctx context.Context, cluster Cluster, val reflect.Value) (interface{}, error) {
 	var err error
 	out := make(map[string]interface{}, val.Len())
 	iter := val.MapRange()
 	for iter.Next() {
-		out[iter.Key().Interface().(string)], err = resolveRValue(ctx, cluster, iter.Value())
+		out[iter.Key().Interface().(string)], err = resolveRValue(g, ctx, cluster, iter.Value())
 		if err != nil {
 			return nil, err
 		}
@@ -255,12 +284,12 @@ func rnestedObjectCopy(val reflect.Value) reflect.Value {
 	return val2
 }
 
-func resolveRNestedObject(ctx context.Context, cluster Cluster, val reflect.Value) (interface{}, error) {
+func resolveRNestedObject(g Gingk8s, ctx context.Context, cluster Cluster, val reflect.Value) (interface{}, error) {
 	var err error
 	out := make(map[string]interface{}, val.Len())
 	iter := val.MapRange()
 	for iter.Next() {
-		out[iter.Key().Interface().(string)], err = resolveRNestedValue(ctx, cluster, iter.Value())
+		out[iter.Key().Interface().(string)], err = resolveRNestedValue(g, ctx, cluster, iter.Value())
 		if err != nil {
 			return nil, err
 		}
@@ -268,24 +297,24 @@ func resolveRNestedObject(ctx context.Context, cluster Cluster, val reflect.Valu
 	return out, nil
 }
 
-func resolveRNestedValue(ctx context.Context, cluster Cluster, val reflect.Value) (interface{}, error) {
+func resolveRNestedValue(g Gingk8s, ctx context.Context, cluster Cluster, val reflect.Value) (interface{}, error) {
 	switch val.Kind() {
 	case reflect.Interface, reflect.Pointer:
-		return resolveRNestedValue(ctx, cluster, val.Elem())
+		return resolveRNestedValue(g, ctx, cluster, val.Elem())
 	case reflect.Array, reflect.Slice:
 		if val.Type().Elem().Kind() == reflect.Uint8 {
 			return base64.StdEncoding.EncodeToString(val.Interface().([]byte)), nil
 		}
-		return resolveRNestedArray(ctx, cluster, val)
+		return resolveRNestedArray(g, ctx, cluster, val)
 	case reflect.Func:
-		return resolveRNestedFunc(ctx, cluster, val)
+		return resolveRNestedFunc(g, ctx, cluster, val)
 	case reflect.Map:
-		return resolveRNestedObject(ctx, cluster, val)
+		return resolveRNestedObject(g, ctx, cluster, val)
 	}
-	return resolveRValue(ctx, cluster, val)
+	return resolveRValue(g, ctx, cluster, val)
 }
-func resolveNestedValue(ctx context.Context, cluster Cluster, v NestedValue) (interface{}, error) {
-	return resolveRNestedValue(ctx, cluster, reflect.ValueOf(v))
+func resolveNestedValue(g Gingk8s, ctx context.Context, cluster Cluster, v NestedValue) (interface{}, error) {
+	return resolveRNestedValue(g, ctx, cluster, reflect.ValueOf(v))
 }
 
 func rnestedValueCopy(val reflect.Value) reflect.Value {
@@ -314,6 +343,6 @@ func rnestedValueCopy(val reflect.Value) reflect.Value {
 	return val
 }
 
-func resolveNestedObject(ctx context.Context, cluster Cluster, o NestedObject) (interface{}, error) {
-	return resolveNestedValue(ctx, cluster, o)
+func resolveNestedObject(g Gingk8s, ctx context.Context, cluster Cluster, o NestedObject) (interface{}, error) {
+	return resolveNestedValue(g, ctx, cluster, o)
 }

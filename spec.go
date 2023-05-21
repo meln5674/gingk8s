@@ -3,15 +3,23 @@ package gingk8s
 import (
 	"context"
 	"fmt"
+	"sync"
 
 	"github.com/meln5674/godag"
 	. "github.com/onsi/ginkgo/v2"
 )
 
+var cleanLock = sync.Mutex{}
+
 type specAction interface {
 	Setup(context.Context, *specState) error
 	Cleanup(context.Context, *specState)
 }
+
+type specNoop struct{}
+
+func (s *specNoop) Setup(context.Context, *specState) error { return nil }
+func (s *specNoop) Cleanup(context.Context, *specState)     {}
 
 type specNode struct {
 	ctx context.Context
@@ -30,7 +38,9 @@ func (s *specNode) DoDAGTask() error {
 	if err != nil {
 		return err
 	}
-	DeferCleanup(s.Cleanup)
+	cleanLock.Lock()
+	defer cleanLock.Unlock()
+	DeferCleanup(func(ctx context.Context) { s.Cleanup(ctx, s.state) })
 	return nil
 }
 
@@ -43,14 +53,13 @@ func (s *specNode) GetDependencies() godag.Set[string] {
 }
 
 type specState struct {
-	thirdPartyImages map[string]*ThirdPartyImage
-
+	thirdPartyImages       map[string]*ThirdPartyImage
 	thirdPartyImageFormats map[string]ImageFormat
-	customImages           map[string]*CustomImage
-	customImageFormats     map[string]ImageFormat
-
 	clusterThirdPartyLoads map[string]map[string]string
-	clusterCustomLoads     map[string]map[string]string
+
+	customImages       map[string]*CustomImage
+	customImageFormats map[string]ImageFormat
+	clusterCustomLoads map[string]map[string]string
 
 	clusters map[string]Cluster
 

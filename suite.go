@@ -49,4 +49,5 @@ var (
 
 func init() {
 	state.specState = newSpecState(&state, nil)
+	state.suite = &state
 }
