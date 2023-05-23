@@ -1,5 +1,7 @@
 package gingk8s
 
+import "github.com/onsi/ginkgo/v2"
+
 // SuiteOpts controls the behavior of the suite
 type SuiteOpts struct {
 	// NoSuiteCleanup disables deleting the cluster after the suite has finishes
@@ -36,6 +38,8 @@ type suiteState struct {
 	specState
 
 	opts SuiteOpts
+
+	ginkgo ginkgo.FullGinkgoTInterface
 
 	setup []*specNode
 }

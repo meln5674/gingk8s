@@ -4,7 +4,9 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"os"
 
+	"github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"k8s.io/klog/v2"
@@ -29,10 +31,12 @@ type Gingk8s struct {
 	*specState
 }
 
-func ForSuite() Gingk8s {
+func ForSuite(g ginkgo.FullGinkgoTInterface) Gingk8s {
 	klogFlags := flag.NewFlagSet("klog", flag.PanicOnError)
 	klog.InitFlags(klogFlags)
 	Expect(klogFlags.Parse([]string{"-v=11"})).To(Succeed())
+
+	state.ginkgo = g
 
 	return Gingk8s{specState: &state.specState}
 }
@@ -147,6 +151,17 @@ func (g *Gingk8s) Setup(ctx context.Context) {
 
 	dag, err := godag.Build[string, *specNode](nodes)
 	Expect(err).ToNot(HaveOccurred())
+	if os.Getenv("GINGK8S_INTERACTIVE") != "" {
+		DeferCleanup(func(ctx context.Context) {
+			if g.suite.ginkgo.Failed() {
+				fmt.Println(g.suite.ginkgo.F("{{red}}{{bold}}This setup has failed and you are running in interactive mode.  Here's a timeline of the spec:{{/}}"))
+				fmt.Println(g.suite.ginkgo.Fi(1, g.suite.ginkgo.Name()))
+				fmt.Println(g.suite.ginkgo.Fi(1, g.suite.ginkgo.RenderTimeline()))
 
+				fmt.Println(g.suite.ginkgo.F("{{red}}{{bold}}Gingk8s will now sleep so you can interact with the cluster(s).  Hit ^C when you're done to shut down the suite{{/}}"))
+				<-ctx.Done()
+			}
+		})
+	}
 	Expect(ex.Run(dag, godag.Options[string]{})).To(Succeed())
 }

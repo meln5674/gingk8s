@@ -17,7 +17,7 @@ func TestGingk8s(t *testing.T) {
 
 var g gingk8s.Gingk8s
 var _ = BeforeSuite(func(ctx context.Context) {
-	g = gingk8s.ForSuite()
+	g = gingk8s.ForSuite(GinkgoT())
 	// Gingk8sOptions sets global options for the suite
 	g.Options(gingk8s.SuiteOpts{
 		// If you want to leave your suite resources running after the suite finishes,
