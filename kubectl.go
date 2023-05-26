@@ -83,10 +83,11 @@ func (g Gingk8s) KubectlExec(ctx context.Context, cluster Cluster, name, cmd str
 }
 
 type KubectlWatcher struct {
-	Kind  string
-	Name  string
-	Flags []string
-	cmd   *gosh.Cmd
+	Kind   string
+	Name   string
+	Flags  []string
+	cmd    *gosh.Cmd
+	cancel func()
 }
 
 func (k *KubectlWatcher) Setup(g Gingk8s, ctx context.Context, cluster Cluster) error {
@@ -96,17 +97,14 @@ func (k *KubectlWatcher) Setup(g Gingk8s, ctx context.Context, cluster Cluster) 
 	} else {
 		args = append(args, k.Kind)
 	}
+	ctx, k.cancel = context.WithCancel(ctx)
 	args = append(args, k.Flags...)
 	k.cmd = g.Kubectl(ctx, cluster, args...)
 	return k.cmd.Start()
 }
 
 func (k *KubectlWatcher) Cleanup(g Gingk8s, ctx context.Context, cluster Cluster) error {
-	err := k.cmd.Kill()
-	if err != nil {
-		return err
-	}
-	k.cmd.Wait()
+	k.cancel()
 	return nil
 }
 
@@ -117,12 +115,14 @@ type KubectlPortForwarder struct {
 	Flags       []string
 	RetryPeriod time.Duration
 	stop        chan struct{}
+	cancel      func()
 	stopped     chan struct{}
 }
 
 func (k *KubectlPortForwarder) Setup(g Gingk8s, ctx context.Context, cluster Cluster) error {
 	k.stop = make(chan struct{})
 	k.stopped = make(chan struct{})
+	ctx, k.cancel = context.WithCancel(ctx)
 	go func() {
 		defer func() { close(k.stopped) }()
 		ref := k.Kind
@@ -150,6 +150,7 @@ func (k *KubectlPortForwarder) Setup(g Gingk8s, ctx context.Context, cluster Clu
 
 func (k *KubectlPortForwarder) Cleanup(g Gingk8s, ctx context.Context, cluster Cluster) error {
 	close(k.stop)
+	k.cancel()
 	<-k.stopped
 	return nil
 }
