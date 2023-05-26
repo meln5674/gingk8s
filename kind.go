@@ -224,7 +224,7 @@ func (k *KindCluster) LoadImages(ctx context.Context, from Images, format ImageF
 			break
 		}
 		last = parts[0]
-		archivePaths[ix] = strings.Join(parts, "/")
+		archivePaths[ix] = filepath.Join(k.TempDir, "images", strings.Join(parts, "/"))
 	}
 	if allSame {
 		save, _ := from.Save(ctx, images, archivePaths[0])
@@ -232,9 +232,8 @@ func (k *KindCluster) LoadImages(ctx context.Context, from Images, format ImageF
 		return gosh.And(save, load)
 	}
 
-	for _, image := range images {
-		path := filepath.Join(k.TempDir, "images", string(format), strings.ReplaceAll(image, ":", "/")+".tar")
-		save, _ := from.Save(ctx, []string{image}, path)
+	for ix, path := range archivePaths {
+		save, _ := from.Save(ctx, []string{images[ix]}, path)
 		load := k.kind(ctx, []string{"load", "image-archive", path})
 		saves = append(saves, gosh.And(save, load))
 	}
