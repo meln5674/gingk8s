@@ -4,7 +4,7 @@ Kubernetes Automation for Ginkgo tests.
 
 # What?
 
-GingK8s is an extention to the [Ginkgo](https://github.com/onsi/ginkgo) test framework to make building  and destroying whole-cloth Kubernetes Development and Test environments easy, reliable, and repeatable.
+GingK8s is an extention to the [Ginkgo](https://github.com/onsi/ginkgo) test framework to make building and destroying whole-cloth Kubernetes Development and Test environments easy, reliable, and repeatable.
 
 # Why?
 
@@ -23,11 +23,7 @@ GingK8s provides types to declaratively represent common tasks in setting up a K
 * Executing scripts within deployed containers
 * Executing arbitrary go functions against deployed clusters
 * Forwarding ports from containers within the cluster to the local machine
-* Creating randomized namespaces to allow parallel tests
-* Creating common resources in a "once, and only once" fashion between multiple processes to allow parallel spec, and even parallel suite execution
 * Watching resources and events for debugging
-
-These types are then used to build a dependency graph which is then executed in parallel as part of a Ginkgo Suite or Spec setup, along with registering cleanup hooks to clean up after themselves.
 
 # Examples
 
