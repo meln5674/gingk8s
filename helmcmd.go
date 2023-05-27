@@ -53,6 +53,8 @@ func (h *HelmCommand) AddRepo(ctx context.Context, repo *HelmRepo) gosh.Commande
 
 // InstallOrUpgrade implements Helm
 func (h *HelmCommand) InstallOrUpgrade(g Gingk8s, ctx context.Context, cluster Cluster, release *HelmRelease) gosh.Commander {
+	cmds := []gosh.Commander{}
+
 	args := []string{"upgrade", "--install", release.Name, release.Chart.Fullname()}
 	if !release.NoWait {
 		args = append(args, "--wait")
@@ -85,55 +87,61 @@ func (h *HelmCommand) InstallOrUpgrade(g Gingk8s, ctx context.Context, cluster C
 	}
 
 	conn := cluster.GetConnection()
-	if len(release.Values) == 0 {
-		return h.helm(ctx, conn, args)
-	}
-	namespacePathPart := release.Namespace
-	if namespacePathPart == "" {
-		namespacePathPart = "_DEFAULT_"
-	}
-	valueDir := filepath.Join(cluster.GetTempPath("helm", filepath.Join("releases", namespacePathPart, release.Name, "values")))
-	tempValueBasename := func(ix int) string {
-		return fmt.Sprintf("%d.yaml", ix)
-	}
-	tempValuePath := func(ix int) string {
-		return filepath.Join(valueDir, tempValueBasename(ix))
-	}
-	mktemp := gosh.FromFunc(ctx, func(ctx context.Context, stdin io.Reader, stdout, stderr io.Writer, done chan error) error {
-		go func() {
-			defer GinkgoRecover()
-			var err error
-			defer func() { done <- err; close(done) }()
-			err = os.MkdirAll(valueDir, 0700)
-			if err != nil {
-				return
-			}
-			err = func() error {
-				for ix, v := range release.Values {
-					resolved, err := resolveNestedObject(g, ctx, cluster, v)
-					if err != nil {
-						return err
-					}
-					valuesYAML, err := yaml.Marshal(resolved)
-					if err != nil {
-						return err
-					}
-					valuesPath := tempValuePath(ix)
-					err = os.WriteFile(valuesPath, valuesYAML, 0600)
-					if err != nil {
-						return err
-					}
+	if len(release.Values) != 0 {
+		namespacePathPart := release.Namespace
+		if namespacePathPart == "" {
+			namespacePathPart = "_DEFAULT_"
+		}
+		valueDir := filepath.Join(cluster.GetTempPath("helm", filepath.Join("releases", namespacePathPart, release.Name, "values")))
+		tempValueBasename := func(ix int) string {
+			return fmt.Sprintf("%d.yaml", ix)
+		}
+		tempValuePath := func(ix int) string {
+			return filepath.Join(valueDir, tempValueBasename(ix))
+		}
+		mktemp := gosh.FromFunc(ctx, func(ctx context.Context, stdin io.Reader, stdout, stderr io.Writer, done chan error) error {
+			go func() {
+				defer GinkgoRecover()
+				var err error
+				defer func() { done <- err; close(done) }()
+				err = os.MkdirAll(valueDir, 0700)
+				if err != nil {
+					return
 				}
-				return nil
+				err = func() error {
+					for ix, v := range release.Values {
+						resolved, err := resolveNestedObject(g, ctx, cluster, v)
+						if err != nil {
+							return err
+						}
+						valuesYAML, err := yaml.Marshal(resolved)
+						if err != nil {
+							return err
+						}
+						valuesPath := tempValuePath(ix)
+						err = os.WriteFile(valuesPath, valuesYAML, 0600)
+						if err != nil {
+							return err
+						}
+					}
+					return nil
+				}()
 			}()
-		}()
-		return nil
-	})
-	for ix := range release.Values {
-		args = append(args, "--values", tempValuePath(ix))
+			return nil
+		})
+		for ix := range release.Values {
+			args = append(args, "--values", tempValuePath(ix))
+		}
+		cmds = append(cmds, mktemp)
 	}
 
-	return gosh.And(mktemp, h.helm(ctx, conn, args))
+	if release.Chart.LocalChartInfo.DependencyUpdate {
+		cmds = append(cmds, h.helm(ctx, conn, []string{"dependency", "update", release.Chart.Fullname()}))
+	}
+
+	cmds = append(cmds, h.helm(ctx, conn, args))
+
+	return gosh.And(cmds...)
 }
 
 // Delete implements Helm

@@ -77,7 +77,8 @@ type HelmRepo struct {
 // LocalChartInfo is a reference to a helm chart from a local directory or tarball
 type LocalChartInfo struct {
 	// Path is the path to the local directory or tarball
-	Path string
+	Path             string
+	DependencyUpdate bool
 }
 
 // RemoteChartInfo is a reference to a helm chart from a remote repository
