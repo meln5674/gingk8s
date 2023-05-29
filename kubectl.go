@@ -161,6 +161,65 @@ func (k *KubectlPortForwarder) Cleanup(g Gingk8s, ctx context.Context, cluster C
 	return nil
 }
 
+type KubectlLogger struct {
+	Kind        string
+	Name        string
+	Flags       []string
+	RetryPeriod time.Duration
+	stop        chan struct{}
+	cancel      func()
+	stopped     chan struct{}
+}
+
+func (k *KubectlLogger) Setup(g Gingk8s, ctx context.Context, cluster Cluster) error {
+	k.stop = make(chan struct{})
+	k.stopped = make(chan struct{})
+	ctx, k.cancel = context.WithCancel(ctx)
+	since := time.Time{}
+	go func() {
+		defer func() { close(k.stopped) }()
+		ref := k.Kind
+		if ref != "" {
+			ref += "/"
+		}
+		ref += k.Name
+		args := []string{"logs", "-f", ref}
+		if since != (time.Time{}) {
+			args = append(args, "--since", since.String())
+		}
+		args = append(args, k.Flags...)
+		for {
+			err := g.Kubectl(ctx, cluster, args...).Run()
+			since = time.Now()
+			if errors.Is(err, context.Canceled) {
+				GinkgoWriter.Printf("Kubectl logger was canceled\n")
+				return
+			}
+			GinkgoWriter.Printf("Checking if kubectl logger stop was requested\n")
+			stop := false
+			select {
+			case <-k.stop:
+				stop = true
+			default:
+				stop = false
+			}
+			if stop {
+				GinkgoWriter.Printf("Kubectl logger was not stopped\n")
+				return
+			}
+			GinkgoWriter.Printf("Logs for %s failed, waiting %s before retrying: %v\n", ref, k.RetryPeriod.String(), err)
+		}
+	}()
+	return nil
+}
+
+func (k *KubectlLogger) Cleanup(g Gingk8s, ctx context.Context, cluster Cluster) error {
+	close(k.stop)
+	k.cancel()
+	<-k.stopped
+	return nil
+}
+
 func (g Gingk8s) KubectlWait(ctx context.Context, cluster Cluster, fors ...WaitFor) gosh.Commander {
 	waits := []gosh.Commander{}
 	for _, wait := range fors {
