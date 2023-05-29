@@ -138,7 +138,13 @@ func (k *KubectlPortForwarder) Setup(g Gingk8s, ctx context.Context, cluster Clu
 			if errors.Is(err, context.Canceled) {
 				return
 			}
-			_, stop := <-k.stop
+			stop := false
+			select {
+			case <-k.stop:
+				stop = true
+			default:
+				stop = false
+			}
 			if stop {
 				return
 			}
