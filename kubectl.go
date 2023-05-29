@@ -138,17 +138,13 @@ func (k *KubectlPortForwarder) Setup(g Gingk8s, ctx context.Context, cluster Clu
 			if errors.Is(err, context.Canceled) {
 				return
 			}
-			stop := false
 			select {
 			case <-k.stop:
-				stop = true
-			default:
-				stop = false
-			}
-			if stop {
 				return
+			default:
+				GinkgoWriter.Printf("Port-forward for %s failed, waiting %s before retrying: %v\n", ref, k.RetryPeriod.String(), err)
+				time.Sleep(k.RetryPeriod)
 			}
-			GinkgoWriter.Printf("Port-forward for %s failed, waiting %s before retrying: %v\n", ref, k.RetryPeriod.String(), err)
 		}
 	}()
 	return nil
@@ -195,19 +191,13 @@ func (k *KubectlLogger) Setup(g Gingk8s, ctx context.Context, cluster Cluster) e
 				GinkgoWriter.Printf("Kubectl logger was canceled\n")
 				return
 			}
-			GinkgoWriter.Printf("Checking if kubectl logger stop was requested\n")
-			stop := false
 			select {
 			case <-k.stop:
-				stop = true
-			default:
-				stop = false
-			}
-			if stop {
-				GinkgoWriter.Printf("Kubectl logger was not stopped\n")
 				return
+			default:
+				GinkgoWriter.Printf("Logs for %s failed, waiting %s before retrying: %v\n", ref, k.RetryPeriod.String(), err)
+				time.Sleep(k.RetryPeriod)
 			}
-			GinkgoWriter.Printf("Logs for %s failed, waiting %s before retrying: %v\n", ref, k.RetryPeriod.String(), err)
 		}
 	}()
 	return nil
