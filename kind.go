@@ -129,9 +129,14 @@ func (k *KindCluster) Create(ctx context.Context, skipExisting bool) gosh.Comman
 					}
 					env[parts[0]] = parts[1]
 				}
+				pwd, err := os.Getwd()
+				if err != nil {
+					return err
+				}
 				templateData := map[string]interface{}{
 					"Env":  env,
 					"Data": k.ConfigFileTemplateData,
+					"Pwd":  pwd,
 				}
 				f, err := os.Create(configPath)
 				if err != nil {
