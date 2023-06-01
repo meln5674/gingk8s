@@ -55,7 +55,8 @@ func (g *Gingk8s) Setup(ctx context.Context) {
 		g.suite.opts.CustomImageTag = DefaultCustomImageTag
 	}
 	if g.suite.opts.ExtraCustomImageTags == nil {
-		g.suite.opts.ExtraCustomImageTags = DefaultExtraCustomImageTags()
+		g.suite.opts.ExtraCustomImageTags = make([]string, len(DefaultExtraCustomImageTags))
+		copy(g.suite.opts.ExtraCustomImageTags, DefaultExtraCustomImageTags)
 	}
 	if g.suite.opts.Images == nil {
 		g.suite.opts.Images = DefaultImages

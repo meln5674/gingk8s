@@ -10,9 +10,14 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 )
 
-var (
+const (
 	// DefaultCustomImageTag is the default tag to apply to custom images if none is specified
 	DefaultCustomImageTag = "gingk8s-latest"
+)
+
+var (
+	// DefaultExtraCustomImageTags are the default additional tags to apply to custom images if none are specified
+	DefaultExtraCustomImageTags = []string{fmt.Sprintf("gingk8s-ts-%d", time.Now().Unix())}
 
 	// DefaultImages is the default interface used to manage images if none is specified.
 	// It defaults to using the "docker" command on the $PATH
@@ -160,10 +165,6 @@ func (l *loadCustomImageAction) Setup(ctx context.Context, state *specState) err
 }
 
 func (l *loadCustomImageAction) Cleanup(ctx context.Context, state *specState) {}
-
-func DefaultExtraCustomImageTags() []string {
-	return []string{fmt.Sprintf("gingk8s-ts-%d", time.Now().Unix())}
-}
 
 // ThirdPartyImage represents an externally hosted image to be pulled and loaded into the cluster
 type ThirdPartyImage struct {
