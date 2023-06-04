@@ -31,6 +31,29 @@ func (c ClusterAction) Cleanup(g Gingk8s, ctx context.Context, cluster Cluster) 
 	return nil
 }
 
+type ClusterCleanupAction ClusterAction
+
+func (c ClusterCleanupAction) Setup(g Gingk8s, ctx context.Context, cluster Cluster) error {
+	return nil
+}
+
+func (c ClusterCleanupAction) Cleanup(g Gingk8s, ctx context.Context, cluster Cluster) error {
+	return c(g, ctx, cluster)
+}
+
+type ClusterActionOnFailure ClusterAction
+
+func (c ClusterActionOnFailure) Setup(g Gingk8s, ctx context.Context, cluster Cluster) error {
+	return nil
+}
+
+func (c ClusterActionOnFailure) Cleanup(g Gingk8s, ctx context.Context, cluster Cluster) error {
+	if !g.suite.ginkgo.Failed() {
+		return nil
+	}
+	return c(g, ctx, cluster)
+}
+
 type ClusterCommander func(Gingk8s, context.Context, Cluster) gosh.Commander
 
 func (c ClusterCommander) Setup(g Gingk8s, ctx context.Context, cluster Cluster) error {
