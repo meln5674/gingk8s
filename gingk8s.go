@@ -32,9 +32,6 @@ type Gingk8s struct {
 }
 
 func ForSuite(g ginkgo.FullGinkgoTInterface) Gingk8s {
-	klogFlags := flag.NewFlagSet("klog", flag.PanicOnError)
-	klog.InitFlags(klogFlags)
-	Expect(klogFlags.Parse([]string{"-v=11"})).To(Succeed())
 
 	state.ginkgo = g
 
@@ -45,12 +42,21 @@ func (g Gingk8s) Options(opts SuiteOpts) {
 	g.suite.opts = opts
 }
 
+func (g Gingk8s) GetOptions() SuiteOpts {
+	return g.suite.opts
+}
+
 func (g Gingk8s) ForSpec() Gingk8s {
 	child := g.child()
 	return Gingk8s{specState: &child}
 }
 
 func (g *Gingk8s) Setup(ctx context.Context) {
+	if g.specState.parent == nil || g.suite.opts.KLogFlags != nil {
+		klogFlags := flag.NewFlagSet("klog", flag.PanicOnError)
+		klog.InitFlags(klogFlags)
+		Expect(klogFlags.Parse(g.suite.opts.KLogFlags)).To(Succeed())
+	}
 	if g.suite.opts.CustomImageTag == "" {
 		g.suite.opts.CustomImageTag = DefaultCustomImageTag
 	}

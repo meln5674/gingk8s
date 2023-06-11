@@ -32,6 +32,9 @@ type SuiteOpts struct {
 	Helm Helm
 	// Kubectl is how to execute kubectl
 	Kubectl Kubectl
+
+	// KLogFlags are a set of command line flags to configure the klog library with
+	KLogFlags []string
 }
 
 type suiteState struct {
