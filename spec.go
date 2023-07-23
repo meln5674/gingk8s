@@ -6,7 +6,6 @@ import (
 	"sync"
 
 	"github.com/meln5674/godag"
-	. "github.com/onsi/ginkgo/v2"
 )
 
 var cleanLock = sync.Mutex{}
@@ -29,19 +28,20 @@ type specNode struct {
 	dependsOn []string
 }
 
-var _ = godag.Node[string](&specNode{})
+var _ = godag.Node[string, *specNode](&specNode{})
 
-func (s *specNode) DoDAGTask() error {
+func (s *specNode) DoDAGTask() ([]*specNode, error) {
 	// defer GinkgoRecover()
 	defer ByStartStop(fmt.Sprintf("Gingk8s Node: %s", s.id))()
 	err := s.Setup(s.ctx, s.state)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	cleanLock.Lock()
 	defer cleanLock.Unlock()
-	DeferCleanup(func(ctx context.Context) { s.Cleanup(ctx, s.state) })
-	return nil
+	s.state.cleanup = append(s.state.cleanup, s)
+	// DeferCleanup(func(ctx context.Context) { s.Cleanup(ctx, s.state) })
+	return nil, nil
 }
 
 func (s *specNode) GetID() string {
@@ -50,6 +50,16 @@ func (s *specNode) GetID() string {
 
 func (s *specNode) GetDependencies() godag.Set[string] {
 	return godag.SetFrom[string](s.dependsOn)
+}
+
+type cleanupSpecNode struct {
+	*specNode
+	ctx context.Context
+}
+
+func (s cleanupSpecNode) DoDAGTask() ([]cleanupSpecNode, error) {
+	s.specNode.Cleanup(s.ctx, s.state)
+	return nil, nil
 }
 
 type specState struct {
@@ -71,6 +81,8 @@ type specState struct {
 	suite  *suiteState
 
 	setup []*specNode
+
+	cleanup []*specNode
 }
 
 func (s *specState) getCluster(id string) Cluster {

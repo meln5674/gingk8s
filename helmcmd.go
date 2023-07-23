@@ -141,12 +141,16 @@ func (h *HelmCommand) InstallOrUpgrade(g Gingk8s, ctx context.Context, cluster C
 
 	cmds = append(cmds, h.helm(ctx, conn, args))
 
+	if len(release.Wait) != 0 {
+		cmds = append(cmds, g.KubectlWait(ctx, cluster, release.Wait...))
+	}
+
 	return gosh.And(cmds...)
 }
 
 // Delete implements Helm
 func (h *HelmCommand) Delete(ctx context.Context, cluster Cluster, release *HelmRelease, skipNotExists bool) gosh.Commander {
-	args := []string{"delete", release.Name}
+	args := []string{"delete", release.Name, "--wait"}
 	if release.Namespace != "" {
 		args = append(args, "--namespace", release.Namespace)
 	}

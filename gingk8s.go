@@ -158,6 +158,24 @@ func (g *Gingk8s) Setup(ctx context.Context) {
 
 	dag, err := godag.Build[string, *specNode](nodes)
 	Expect(err).ToNot(HaveOccurred())
+	DeferCleanup(func(ctx context.Context) {
+		startFrom := godag.NewSet[string]()
+		for _, node := range g.cleanup {
+			startFrom.Add(node.id)
+		}
+		cleanupDag := godag.DAG[string, cleanupSpecNode]{Nodes: make(map[string]cleanupSpecNode)}
+		for k, v := range dag.Nodes {
+			cleanupDag.Nodes[k] = cleanupSpecNode{specNode: v, ctx: ctx}
+		}
+
+		cleanupEx := godag.Executor[string, godag.NodeWithDependencies[string, cleanupSpecNode]]{}
+
+		reversed := godag.Reverse[string, cleanupSpecNode](cleanupDag)
+		GinkgoWriter.Printf("Cleaning up %#v\n", reversed)
+		Expect(cleanupEx.Run(ctx, reversed, godag.Options[string]{
+			StartFrom: startFrom,
+		})).To(Succeed())
+	})
 	if os.Getenv("GINGK8S_INTERACTIVE") != "" {
 		DeferCleanup(func(ctx context.Context) {
 			if g.suite.ginkgo.Failed() {
@@ -170,5 +188,6 @@ func (g *Gingk8s) Setup(ctx context.Context) {
 			}
 		})
 	}
-	Expect(ex.Run(dag, godag.Options[string]{})).To(Succeed())
+	fmt.Printf("Running %#v\n", dag)
+	Expect(ex.Run(ctx, dag, godag.Options[string]{})).To(Succeed())
 }

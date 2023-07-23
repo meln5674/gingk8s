@@ -118,12 +118,17 @@ type buildCustomImageAction struct {
 }
 
 func (b *buildCustomImageAction) Setup(ctx context.Context, state *specState) error {
+	image := state.customImages[b.id]
 	if state.suite.opts.NoBuild {
-		By(fmt.Sprintf("SKIPPED: Building image %s", state.customImages[b.id].WithTag(state.suite.opts.CustomImageTag)))
+		By(fmt.Sprintf("SKIPPED: Building image %s", image.WithTag(state.suite.opts.CustomImageTag)))
 		return nil
 	}
-	defer ByStartStop(fmt.Sprintf("Building image %s", state.customImages[b.id].WithTag(state.suite.opts.CustomImageTag)))()
-	return state.suite.opts.Images.Build(ctx, state.customImages[b.id], state.suite.opts.CustomImageTag, state.suite.opts.ExtraCustomImageTags).Run()
+	defer ByStartStop(fmt.Sprintf("Building image %s", image.WithTag(state.suite.opts.CustomImageTag)))()
+	builder := image.Builder
+	if builder == nil {
+		builder = state.suite.opts.Images
+	}
+	return builder.Build(ctx, image, state.suite.opts.CustomImageTag, state.suite.opts.ExtraCustomImageTags).Run()
 }
 
 func (b *buildCustomImageAction) Cleanup(ctx context.Context, state *specState) {}
@@ -190,6 +195,8 @@ type CustomImage struct {
 	BuildArgs map[string]string
 	// Flags are extra flags to the build command
 	Flags []string
+	// Builder is the custom image builder, if present, otherwise, the default image builder will be used
+	Builder Images
 }
 
 func (c *CustomImage) WithTag(tag string) string {

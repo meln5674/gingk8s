@@ -215,7 +215,11 @@ func (g Gingk8s) KubectlWait(ctx context.Context, cluster Cluster, fors ...WaitF
 	for _, wait := range fors {
 		args := []string{"wait", wait.Resource}
 		for k, v := range wait.For {
-			args = append(args, "--for", k+"="+v)
+			if v == "" {
+				args = append(args, "--for", k)
+			} else {
+				args = append(args, "--for", k+"="+v)
+			}
 		}
 		waits = append(waits, g.suite.opts.Kubectl.Kubectl(ctx, cluster, args))
 	}
