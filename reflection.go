@@ -232,7 +232,6 @@ func rvalueCopy(val reflect.Value) reflect.Value {
 			return val
 		}
 		val2 := rvalueCopy(val.Elem()).Convert(val.Type())
-		fmt.Printf("Copied %v/%v (%v/%v) as %v/%v (%v/%v)\n", val.Type(), val, val.Elem().Type(), val.Elem(), val2.Type(), val2, val2.Elem().Type(), val2.Elem())
 		return val2
 	case reflect.Pointer:
 		if val.IsNil() {
@@ -240,7 +239,6 @@ func rvalueCopy(val reflect.Value) reflect.Value {
 		}
 		val2 := reflect.New(val.Type().Elem())
 		val2.Elem().Set(rvalueCopy(val2.Elem()))
-		fmt.Printf("Copied %v/%v (%v/%v) as %v/%v (%v/%v)\n", val.Type(), val, val.Elem().Type(), val.Elem(), val2.Type(), val2, val2.Elem().Type(), val2.Elem())
 		return val2
 	case reflect.Array, reflect.Slice:
 		if val.Type().Elem().Kind() == reflect.Uint8 {
