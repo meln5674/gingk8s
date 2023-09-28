@@ -118,3 +118,28 @@ func newSpecState(suite *suiteState, parent *specState) specState {
 		parent: parent,
 	}
 }
+
+type serializableSpec struct {
+	Clusters map[string]*DummyCluster
+}
+
+func (s *specState) serialize() serializableSpec {
+	serializable := serializableSpec{
+		Clusters: make(map[string]*DummyCluster, len(s.clusters)),
+	}
+	for k, v := range s.clusters {
+		serializable.Clusters[k] = &DummyCluster{Connection: *v.GetConnection()}
+	}
+	return serializable
+}
+
+func (s *specState) deserialize(parent *specState, serializable serializableSpec) {
+	s.clusters = make(map[string]Cluster, len(serializable.Clusters))
+	s.parent = parent
+	if parent != nil {
+		s.suite = s.parent.suite
+	}
+	for k, v := range serializable.Clusters {
+		s.clusters[k] = v
+	}
+}

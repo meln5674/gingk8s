@@ -2,6 +2,7 @@ package gingk8s
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
@@ -190,4 +191,58 @@ func (g *Gingk8s) Setup(ctx context.Context) {
 	}
 	fmt.Printf("Running %#v\n", dag)
 	Expect(ex.Run(ctx, dag, godag.Options[string]{})).To(Succeed())
+}
+
+type serializableGingk8s struct {
+	Specs      []serializableSpec
+	ClusterIDs []string
+}
+
+// Serialize takes a gingk8s instance and a set of cluster IDs and serializes them to be
+// used with ginkgo.BeforeSuiteSynchronized.
+// Only cluster ID's will be valid dependencies in the "rehydrated" gingk8s instance, so
+// Serialize() MUST be called AFTER Setup(), as any images, manifests, releases, etc,
+// will be inaccessible on the parallel processes.
+func (g *Gingk8s) Serialize(clusterIDs ...ClusterID) []byte {
+	g2 := serializableGingk8s{
+		Specs:      []serializableSpec{},
+		ClusterIDs: make([]string, len(clusterIDs)),
+	}
+	for spec := g.specState; spec != nil; spec = g.specState.parent {
+		g2.Specs = append(g2.Specs, spec.serialize())
+	}
+	// TODO: This is on the honnor system, we don't check if these ID's are valid,
+	// but, there shouldn't be a way for a user to construct a cluster id
+	for ix, id := range clusterIDs {
+		g2.ClusterIDs[ix] = id.id
+	}
+
+	out, err := json.Marshal(&g2)
+	Expect(err).ToNot(HaveOccurred())
+	return out
+}
+
+// Deserialize takes the opaque output from Serialize() and restores a stub gingk8s, along with
+// the same set of cluster IDs.
+// It is the user's responsibility to ensure that the equivalent cluster ID's are passed to both
+// Serialize and Deserialize in the same order.
+func (g *Gingk8s) Deserialize(in []byte, gt ginkgo.FullGinkgoTInterface, clusterIDs ...*ClusterID) {
+	var g2 serializableGingk8s
+	Expect(json.Unmarshal(in, &g2)).To(Succeed())
+
+	var suite suiteState
+	suite.suite = &suite
+	suite.ginkgo = gt
+
+	var parent *specState
+	spec := &suite.specState
+	for ix := len(g2.Specs) - 1; ix >= 0; ix-- {
+		spec.deserialize(parent, g2.Specs[ix])
+		parent = spec
+	}
+	for ix, id := range g2.ClusterIDs {
+		clusterIDs[ix].id = id
+	}
+
+	g.specState = &suite.specState
 }

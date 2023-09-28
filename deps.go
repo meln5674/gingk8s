@@ -1,5 +1,7 @@
 package gingk8s
 
+import "fmt"
+
 type ResourceDependencies struct {
 	ThirdPartyImages []ThirdPartyImageID
 	CustomImages     []CustomImageID
@@ -58,19 +60,19 @@ func (r *ResourceDependencies) allIDs(clusterID string) []string {
 	dependsOn := []string{}
 	for _, image := range r.ThirdPartyImages {
 		if _, ok := state.clusterThirdPartyLoads[clusterID]; !ok {
-			panic(clusterID)
+			panic(fmt.Sprintf("BUG: No cluster with ID %s", clusterID))
 		}
 		if _, ok := state.clusterThirdPartyLoads[clusterID][image.id]; !ok {
-			panic(image)
+			panic(fmt.Sprintf("BUG: Third-Party image %s is not set to load to cluster %s", image.id, clusterID))
 		}
 		dependsOn = append(dependsOn, state.clusterThirdPartyLoads[clusterID][image.id])
 	}
 	for _, image := range r.CustomImages {
 		if _, ok := state.clusterCustomLoads[clusterID]; !ok {
-			panic(clusterID)
+			panic(fmt.Sprintf("BUG: No cluster with ID %s", clusterID))
 		}
 		if _, ok := state.clusterCustomLoads[clusterID][image.id]; !ok {
-			panic(image)
+			panic(fmt.Sprintf("BUG: Custom image %s is not set to load to cluster %s", image.id, clusterID))
 		}
 		dependsOn = append(dependsOn, state.clusterCustomLoads[clusterID][image.id])
 	}

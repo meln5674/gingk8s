@@ -74,3 +74,25 @@ type Cluster interface {
 	// Delete deletes the cluster. Delete should not fail if the cluster exists.
 	Delete(ctx context.Context) gosh.Commander
 }
+
+// DummyCluster implements Cluster but only the methods Create() (which does nothing)
+// and GetConnection() (which returns a canned connection struct), any other calls panic
+type DummyCluster struct {
+	Connection KubernetesConnection
+}
+
+func (d *DummyCluster) Create(ctx context.Context, skipExisting bool) gosh.Commander {
+	panic("UNSUPPORTED")
+}
+func (d *DummyCluster) GetConnection() *KubernetesConnection {
+	return &d.Connection
+}
+func (d *DummyCluster) GetTempPath(group string, path string) string {
+	panic("UNSUPPORTED")
+}
+func (d *DummyCluster) LoadImages(ctx context.Context, from Images, format ImageFormat, images []string) gosh.Commander {
+	panic("UNSUPPORTED")
+}
+func (d *DummyCluster) Delete(ctx context.Context) gosh.Commander {
+	panic("UNSUPPORTED")
+}
