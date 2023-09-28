@@ -164,6 +164,9 @@ func (g *Gingk8s) Setup(ctx context.Context) {
 		for _, node := range g.cleanup {
 			startFrom.Add(node.id)
 		}
+		if startFrom.Len() == 0 {
+			startFrom = godag.Set[string]{}
+		}
 		cleanupDag := godag.DAG[string, cleanupSpecNode]{Nodes: make(map[string]cleanupSpecNode)}
 		for k, v := range dag.Nodes {
 			cleanupDag.Nodes[k] = cleanupSpecNode{specNode: v, ctx: ctx}
