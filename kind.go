@@ -102,16 +102,16 @@ func (k *KindCluster) Create(ctx context.Context, skipExisting bool) gosh.Comman
 				close(done)
 			}()
 			if k.ConfigFileTemplatePath == "" {
-				GinkgoWriter.Printf("Kind config file template path is not set, assuming pre-made configuration path %s is ready\n", configPath)
+				log.Info("Kind config file template path is not set, assuming pre-made configuration path is ready", "path", configPath)
 				return
 			}
 			defer func() {
 				if err != nil {
-					GinkgoWriter.Printf("FAILED: Generating Kind config for cluster %s from template %s: %v", configPath, k.ConfigFileTemplatePath, err)
+					log.Info("FAILED: Generating Kind config for clusterfrom template", "path", configPath, "templatePath", k.ConfigFileTemplatePath, "error", err)
 				}
 			}()
 			err = func() error {
-				GinkgoWriter.Printf("Generating Kind config for cluster %s from template %s\n", configPath, k.ConfigFileTemplatePath)
+				log.Info("Generating Kind config for cluster from template", "path", configPath, "templatePath", k.ConfigFileTemplatePath)
 
 				templateBytes, err := os.ReadFile(k.ConfigFileTemplatePath)
 				if err != nil {
@@ -147,7 +147,7 @@ func (k *KindCluster) Create(ctx context.Context, skipExisting bool) gosh.Comman
 				if err != nil {
 					return err
 				}
-				GinkgoWriter.Printf("SUCCEEDED: Generating Kind config for cluster %s from template %s\n", configPath, k.ConfigFileTemplatePath)
+				log.Info("SUCCEEDED: Generating Kind config for cluster from template", "path", configPath, "templatePath", k.ConfigFileTemplatePath)
 				return nil
 			}()
 		}()

@@ -4,7 +4,7 @@ go 1.19
 
 require (
 	github.com/google/uuid v1.3.0
-	github.com/meln5674/godag v0.3.0-rc2
+	github.com/meln5674/godag v0.3.0-rc4
 	github.com/meln5674/gosh v0.0.0-20230418002009-f731b8b62575
 	github.com/onsi/ginkgo/v2 v2.9.5
 	github.com/onsi/gomega v1.27.7

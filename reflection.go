@@ -186,7 +186,7 @@ func rvalueString(g Gingk8s, ctx context.Context, cluster Cluster, s *strings.Bu
 		if val.IsNil() {
 			return nil
 		}
-		fmt.Printf("Deref'ing %v (%v) -> %v (%v)\n", val, typ, val.Elem(), typ.Elem())
+		log.V(10).Info(fmt.Sprintf("Deref'ing %v (%v) -> %v (%v)\n", val, typ, val.Elem(), typ.Elem()))
 		return rvalueString(g, ctx, cluster, s, val.Elem())
 	case reflect.Array, reflect.Slice:
 		if typ.Elem().Kind() == reflect.Uint8 {
@@ -195,7 +195,7 @@ func rvalueString(g Gingk8s, ctx context.Context, cluster Cluster, s *strings.Bu
 		}
 		return rarrayString(g, ctx, cluster, s, val)
 	case reflect.Func:
-		fmt.Printf("Calling %v (%v)\n", val, typ)
+		log.V(10).Info(fmt.Sprintf("Calling %v (%v)\n", val, typ))
 		return rfuncString(g, ctx, cluster, s, val)
 	case reflect.Complex64, reflect.Complex128, reflect.Chan, reflect.Map, reflect.Struct, reflect.UnsafePointer:
 		panic(fmt.Errorf("Helm substitution does not support %v values (%#v). Values must be typical scalar, arrays/slices of valid types, and functions return return valid types", typ, val))

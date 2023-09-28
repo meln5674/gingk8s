@@ -25,7 +25,6 @@ var (
 )
 
 func (g Gingk8s) Kubectl(ctx context.Context, cluster Cluster, args ...string) *gosh.Cmd {
-	fmt.Printf("g: %#v\n", g)
 	return g.suite.opts.Kubectl.Kubectl(ctx, cluster, args).WithStreams(GinkgoOutErr)
 }
 
@@ -142,7 +141,7 @@ func (k *KubectlPortForwarder) Setup(g Gingk8s, ctx context.Context, cluster Clu
 			case <-k.stop:
 				return
 			default:
-				GinkgoWriter.Printf("Port-forward for %s failed, waiting %s before retrying: %v\n", ref, k.RetryPeriod.String(), err)
+				log.Info("Port-forward failed, waiting before retrying", "resource", ref, "delay", k.RetryPeriod.String(), "error", err)
 				time.Sleep(k.RetryPeriod)
 			}
 		}
@@ -188,14 +187,14 @@ func (k *KubectlLogger) Setup(g Gingk8s, ctx context.Context, cluster Cluster) e
 			err := g.Kubectl(ctx, cluster, args...).Run()
 			since = time.Now()
 			if errors.Is(err, context.Canceled) {
-				GinkgoWriter.Printf("Kubectl logger was canceled\n")
+				log.Info("Kubectl logger was canceled")
 				return
 			}
 			select {
 			case <-k.stop:
 				return
 			default:
-				GinkgoWriter.Printf("Logs for %s failed, waiting %s before retrying: %v\n", ref, k.RetryPeriod.String(), err)
+				log.Info("Kubectl Logs failed, waiting before retrying", "resource", ref, "delay", k.RetryPeriod.String(), "error", err)
 				time.Sleep(k.RetryPeriod)
 			}
 		}
@@ -255,9 +254,9 @@ func (g Gingk8s) WaitForResourceExists(pollPeriod time.Duration, refs ...Resourc
 					return err
 				}
 				if ref.Namespace != "" {
-					GinkgoWriter.Printf("%s %s/%s does not yet exist, waiting...", ref.Kind, ref.Namespace, ref.Name)
+					log.Info("Resource does not yet exist, waiting...", "kind", ref.Kind, "namespace", ref.Namespace, "name", ref.Name)
 				} else {
-					GinkgoWriter.Printf("%s %s does not yet exist, waiting...", ref.Kind, ref.Name)
+					log.Info("Cluster Resource does not yet exist, waiting...", "kind", ref.Kind, "name", ref.Name)
 				}
 				time.Sleep(pollPeriod)
 			}

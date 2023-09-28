@@ -17,6 +17,8 @@ import (
 	"github.com/meln5674/gosh"
 )
 
+var log = klog.NewKlogr().WithName("Gingk8s")
+
 func ByStartStop(msg string) func() {
 	By(fmt.Sprintf("STARTING: %s", msg))
 	return func() { By(fmt.Sprintf("FINISHED: %s", msg)) }
@@ -57,6 +59,7 @@ func (g *Gingk8s) Setup(ctx context.Context) {
 		klogFlags := flag.NewFlagSet("klog", flag.PanicOnError)
 		klog.InitFlags(klogFlags)
 		Expect(klogFlags.Parse(g.suite.opts.KLogFlags)).To(Succeed())
+		klog.SetOutput(GinkgoWriter)
 	}
 	if g.suite.opts.CustomImageTag == "" {
 		g.suite.opts.CustomImageTag = DefaultCustomImageTag
@@ -99,9 +102,11 @@ func (g *Gingk8s) Setup(ctx context.Context) {
 	}
 	Expect(gosh.FanOut(repoAdds...).Run()).To(Succeed())
 
-	ex := godag.Executor[string, *specNode]{}
+	ex := godag.Executor[string, *specNode]{
+		Log: log.WithName("Setup"),
+	}
 
-	GinkgoWriter.Printf("spec: %#v\n", g.specState)
+	log.V(10).Info("Executing Spec", "spec", fmt.Sprintf("%#v", g.specState))
 
 	nodes := make([]*specNode, len(g.setup))
 	copy(nodes, g.setup)
@@ -149,11 +154,10 @@ func (g *Gingk8s) Setup(ctx context.Context) {
 			})
 		}
 
-		GinkgoWriter.Printf("Adding dummy DAG ids: %#v\n", noopIDs)
+		log.V(10).Info("Adding dummy DAG ids", "ids", noopIDs)
 	}
 
 	for ix := range nodes {
-		GinkgoWriter.Printf("Node: %#v\n", nodes[ix])
 		nodes[ix].ctx = ctx
 	}
 
@@ -172,10 +176,12 @@ func (g *Gingk8s) Setup(ctx context.Context) {
 			cleanupDag.Nodes[k] = cleanupSpecNode{specNode: v, ctx: ctx}
 		}
 
-		cleanupEx := godag.Executor[string, godag.NodeWithDependencies[string, cleanupSpecNode]]{}
+		cleanupEx := godag.Executor[string, godag.NodeWithDependencies[string, cleanupSpecNode]]{
+			Log: klog.NewKlogr().WithName("Cleanup"),
+		}
 
 		reversed := godag.Reverse[string, cleanupSpecNode](cleanupDag)
-		GinkgoWriter.Printf("Cleaning up %#v\n", reversed)
+		log.Info("Cleaning up", "reversedDAG", reversed)
 		Expect(cleanupEx.Run(ctx, reversed, godag.Options[string]{
 			StartFrom: startFrom,
 		})).To(Succeed())
@@ -192,7 +198,7 @@ func (g *Gingk8s) Setup(ctx context.Context) {
 			}
 		})
 	}
-	fmt.Printf("Running %#v\n", dag)
+	log.V(10).Info("Running setup", "dag", dag)
 	Expect(ex.Run(ctx, dag, godag.Options[string]{})).To(Succeed())
 }
 
