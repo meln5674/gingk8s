@@ -80,7 +80,15 @@ type KubernetesManifests struct {
 	ResourceRecursiveDirs []string
 	// Replace indicates these resources should be replaced, not applied
 	Replace bool
-	Wait    []WaitFor
+	// Create indicates these resources should be created, not applied
+	Create bool
+	Wait   []WaitFor
+
+	// Created is the list of resources that were created/applied, in order.
+	// If nil, it is ignored.
+	// If non-nil, it must be a pre-populated with the same length as the number of resources.
+	// yaml.Unmarshal is used
+	Created []interface{}
 }
 
 // Manifests knows how to manage raw kubernetes manifests

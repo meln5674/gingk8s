@@ -13,7 +13,8 @@ import (
 	"github.com/meln5674/gosh"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"sigs.k8s.io/yaml"
+	"k8s.io/apimachinery/pkg/util/yaml"
+	yamlwriter "sigs.k8s.io/yaml"
 )
 
 var (
@@ -300,7 +301,12 @@ func (k *KubectlCommand) Kubectl(ctx context.Context, cluster Cluster, args []st
 func (k *KubectlCommand) CreateOrUpdate(g Gingk8s, ctx context.Context, cluster Cluster, manifests *KubernetesManifests) gosh.Commander {
 	applies := []gosh.Commander{}
 	applyFileArgs := func(path string, recursive bool) []string {
-		args := []string{"apply", "--filename", path}
+		var args []string
+		if manifests.Create {
+			args = []string{"create", "--filename", path, "--output", "yaml"}
+		} else {
+			args = []string{"apply", "--server-side", "--filename", path}
+		}
 		if manifests.Replace {
 			args = append(args, "--replace")
 		}
@@ -308,6 +314,27 @@ func (k *KubectlCommand) CreateOrUpdate(g Gingk8s, ctx context.Context, cluster 
 			args = append(args, "--recursive")
 		}
 		return args
+	}
+	createdIx := 0
+	readYAMLs := func(stdout io.Reader) error {
+		GinkgoRecover()
+		if manifests.Created == nil {
+			io.ReadAll(stdout)
+			return nil
+		}
+		dec := yaml.NewYAMLOrJSONDecoder(stdout, 1024)
+		for createdIx < len(manifests.Created) {
+			err := dec.Decode(&manifests.Created[createdIx])
+			createdIx++
+			if errors.Is(err, io.EOF) {
+				return nil
+			}
+			if err != nil {
+				return err
+			}
+		}
+		io.ReadAll(stdout)
+		return nil
 	}
 	if len(manifests.ResourceObjects) != 0 {
 		applies = append(applies, gosh.Pipeline(
@@ -331,7 +358,7 @@ func (k *KubectlCommand) CreateOrUpdate(g Gingk8s, ctx context.Context, cluster 
 							if err != nil {
 								return err
 							}
-							objBytes, err := yaml.Marshal(resolved)
+							objBytes, err := yamlwriter.Marshal(resolved)
 							if err != nil {
 								return err
 							}
@@ -349,17 +376,17 @@ func (k *KubectlCommand) CreateOrUpdate(g Gingk8s, ctx context.Context, cluster 
 				}()
 				return nil
 			}),
-			k.Kubectl(ctx, cluster, applyFileArgs("-", false)),
+			k.Kubectl(ctx, cluster, applyFileArgs("-", false)).WithStreams(gosh.FuncOut(readYAMLs)),
 		))
 	}
 	for _, resource := range manifests.Resources {
-		applies = append(applies, k.Kubectl(ctx, cluster, applyFileArgs("-", false)).WithStreams(gosh.StringIn(resource)))
+		applies = append(applies, k.Kubectl(ctx, cluster, applyFileArgs("-", false)).WithStreams(gosh.StringIn(resource), gosh.FuncOut(readYAMLs)))
 	}
 	for _, path := range manifests.ResourcePaths {
-		applies = append(applies, k.Kubectl(ctx, cluster, applyFileArgs(path, false)))
+		applies = append(applies, k.Kubectl(ctx, cluster, applyFileArgs(path, false)).WithStreams(gosh.FuncOut(readYAMLs)))
 	}
 	for _, path := range manifests.ResourceRecursiveDirs {
-		applies = append(applies, k.Kubectl(ctx, cluster, applyFileArgs(path, true)))
+		applies = append(applies, k.Kubectl(ctx, cluster, applyFileArgs(path, true)).WithStreams(gosh.FuncOut(readYAMLs)))
 	}
 
 	waits := []gosh.Commander{}
