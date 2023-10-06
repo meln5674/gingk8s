@@ -117,7 +117,7 @@ func (k *KindCluster) Create(ctx context.Context, skipExisting bool) gosh.Comman
 				if err != nil {
 					return err
 				}
-				configTemplate, err := template.New(k.ConfigFileTemplatePath).Parse(string(templateBytes))
+				configTemplate, err := template.New(k.ConfigFileTemplatePath).Funcs(map[string]interface{}{"realpath": filepath.Abs}).Parse(string(templateBytes))
 				if err != nil {
 					return err
 				}
