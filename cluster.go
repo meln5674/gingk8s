@@ -31,7 +31,7 @@ func (g Gingk8s) Cluster(cluster Cluster, deps ...ClusterDependency) ClusterID {
 				id:        loadID,
 				imageID:   image.id,
 				clusterID: clusterID,
-				noCache:   g.suite.opts.NoCacheImages,
+				noCache:   g.suite.opts.NoCacheImages && !g.thirdPartyImages[image.id].NoPull,
 			},
 		})
 	}
