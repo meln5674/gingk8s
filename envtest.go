@@ -124,7 +124,7 @@ func (e *EnvTestCluster) GetTempPath(group string, path string) string {
 }
 
 // LoadImages loads a set of images of a given format from.
-func (e *EnvTestCluster) LoadImages(ctx context.Context, from Images, format ImageFormat, images []string) gosh.Commander {
+func (e *EnvTestCluster) LoadImages(ctx context.Context, from Images, format ImageFormat, images []string, noCache bool) gosh.Commander {
 	panic("LoadImages is not supported by EnvTest")
 }
 
