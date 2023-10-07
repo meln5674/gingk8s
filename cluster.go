@@ -23,12 +23,32 @@ func (g Gingk8s) Cluster(cluster Cluster, deps ...ClusterDependency) ClusterID {
 	for _, image := range allDeps.ThirdPartyImages {
 		loadID := newID()
 		g.clusterThirdPartyLoads[clusterID][image.id] = loadID
-		g.setup = append(g.setup, &specNode{state: g.specState, id: loadID, dependsOn: []string{clusterID, image.id}, specAction: &loadThirdPartyImageAction{id: loadID, imageID: image.id, clusterID: clusterID}})
+		g.setup = append(g.setup, &specNode{
+			state:     g.specState,
+			id:        loadID,
+			dependsOn: []string{clusterID, image.id},
+			specAction: &loadThirdPartyImageAction{
+				id:        loadID,
+				imageID:   image.id,
+				clusterID: clusterID,
+				noCache:   g.suite.opts.NoCacheImages,
+			},
+		})
 	}
 	for _, image := range allDeps.CustomImages {
 		loadID := newID()
 		g.clusterCustomLoads[clusterID][image.id] = loadID
-		g.setup = append(g.setup, &specNode{state: g.specState, id: loadID, dependsOn: []string{clusterID, image.id}, specAction: &loadCustomImageAction{id: loadID, imageID: image.id, clusterID: clusterID}})
+		g.setup = append(g.setup, &specNode{
+			state:     g.specState,
+			id:        loadID,
+			dependsOn: []string{clusterID, image.id},
+			specAction: &loadCustomImageAction{
+				id:        loadID,
+				imageID:   image.id,
+				clusterID: clusterID,
+				noCache:   g.suite.opts.NoCacheImages,
+			},
+		})
 	}
 	g.setup = append(g.setup, &clusterNode)
 
@@ -70,7 +90,8 @@ type Cluster interface {
 	// GetTempPath returns the path to a file or directory to use for temporary operations against this cluster
 	GetTempPath(group string, path string) string
 	// LoadImages loads a set of images of a given format from.
-	LoadImages(ctx context.Context, from Images, format ImageFormat, images []string) gosh.Commander
+	// If noCache is set, LoadImages must remove any copies of the image outside of the cluster.
+	LoadImages(ctx context.Context, from Images, format ImageFormat, images []string, noCache bool) gosh.Commander
 	// Delete deletes the cluster. Delete should not fail if the cluster exists.
 	Delete(ctx context.Context) gosh.Commander
 }
@@ -90,7 +111,7 @@ func (d *DummyCluster) GetConnection() *KubernetesConnection {
 func (d *DummyCluster) GetTempPath(group string, path string) string {
 	panic("UNSUPPORTED")
 }
-func (d *DummyCluster) LoadImages(ctx context.Context, from Images, format ImageFormat, images []string) gosh.Commander {
+func (d *DummyCluster) LoadImages(ctx context.Context, from Images, format ImageFormat, images []string, noCache bool) gosh.Commander {
 	panic("UNSUPPORTED")
 }
 func (d *DummyCluster) Delete(ctx context.Context) gosh.Commander {

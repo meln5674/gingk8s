@@ -76,3 +76,11 @@ func (d *DockerCommand) Save(ctx context.Context, images []string, dest string) 
 		d.docker(ctx, args).WithStreams(gosh.FileOut(dest)),
 	), DockerImageFormat
 }
+
+func (d *DockerCommand) Remove(ctx context.Context, images []string) gosh.Commander {
+	args := []string{"image", "rm"}
+	for _, image := range images {
+		args = append(args, image)
+	}
+	return d.docker(ctx, args)
+}

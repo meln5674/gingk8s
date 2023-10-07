@@ -137,6 +137,7 @@ type loadThirdPartyImageAction struct {
 	id        string
 	clusterID string
 	imageID   string
+	noCache   bool
 }
 
 func (l *loadThirdPartyImageAction) Setup(ctx context.Context, state *specState) error {
@@ -145,7 +146,7 @@ func (l *loadThirdPartyImageAction) Setup(ctx context.Context, state *specState)
 		return nil
 	}
 	defer ByStartStop(fmt.Sprintf("Loading image %s", state.thirdPartyImages[l.imageID].Name))()
-	return state.getCluster(l.clusterID).LoadImages(ctx, state.suite.opts.Images, state.thirdPartyImageFormats[l.imageID], []string{state.thirdPartyImages[l.imageID].Name}).Run()
+	return state.getCluster(l.clusterID).LoadImages(ctx, state.suite.opts.Images, state.thirdPartyImageFormats[l.imageID], []string{state.thirdPartyImages[l.imageID].Name}, l.noCache).Run()
 }
 
 func (l *loadThirdPartyImageAction) Cleanup(ctx context.Context, state *specState) {}
@@ -154,6 +155,7 @@ type loadCustomImageAction struct {
 	id        string
 	clusterID string
 	imageID   string
+	noCache   bool
 }
 
 func (l *loadCustomImageAction) Setup(ctx context.Context, state *specState) error {
@@ -166,7 +168,7 @@ func (l *loadCustomImageAction) Setup(ctx context.Context, state *specState) err
 	for _, extra := range state.suite.opts.ExtraCustomImageTags {
 		allTags = append(allTags, state.customImages[l.imageID].WithTag(extra))
 	}
-	return state.getCluster(l.clusterID).LoadImages(ctx, state.suite.opts.Images, state.customImageFormats[l.imageID], allTags).Run()
+	return state.getCluster(l.clusterID).LoadImages(ctx, state.suite.opts.Images, state.customImageFormats[l.imageID], allTags, l.noCache).Run()
 }
 
 func (l *loadCustomImageAction) Cleanup(ctx context.Context, state *specState) {}
@@ -229,6 +231,8 @@ type Images interface {
 	Pull(ctx context.Context, image *ThirdPartyImage) gosh.Commander
 	// Build builds a local image with one or more tags
 	Build(ctx context.Context, image *CustomImage, tag string, extraTags []string) gosh.Commander
-	// Save exports a set of built images as a tarball and indicates the format it will do so with
+	// Save exports a set of built images as a tarball and indicates the format it will do so with.
 	Save(ctx context.Context, images []string, dest string) (gosh.Commander, ImageFormat)
+	// Remove removes an image
+	Remove(ctx context.Context, images []string) gosh.Commander
 }

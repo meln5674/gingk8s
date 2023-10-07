@@ -101,6 +101,18 @@ func MkdirAll(path string, mode os.FileMode) gosh.Func {
 	}
 }
 
+func Rm(path string) gosh.Func {
+	return func(ctx context.Context, stdin io.Reader, stdout, stderr io.Writer, done chan error) error {
+		go func() {
+			defer GinkgoRecover()
+			var err error
+			defer func() { done <- err; close(done) }()
+			err = os.Remove(path)
+		}()
+		return nil
+	}
+}
+
 type WaitFor struct {
 	Resource string
 	For      StringObject

@@ -211,7 +211,7 @@ func (k *KindCluster) GetTempPath(group string, path string) string {
 }
 
 // LoadImages implements cluster
-func (k *KindCluster) LoadImages(ctx context.Context, from Images, format ImageFormat, images []string) gosh.Commander {
+func (k *KindCluster) LoadImages(ctx context.Context, from Images, format ImageFormat, images []string, noCache bool) gosh.Commander {
 	if len(images) == 0 {
 		return gosh.FromFunc(ctx, func(ctx context.Context, stdin io.Reader, stdout, stderr io.Writer, done chan error) error {
 			close(done)
@@ -232,15 +232,33 @@ func (k *KindCluster) LoadImages(ctx context.Context, from Images, format ImageF
 		archivePaths[ix] = filepath.Join(k.TempDir, "images", strings.Join(parts, "/"))
 	}
 	if allSame {
+		cmds := make([]gosh.Commander, 0, 4)
 		save, _ := from.Save(ctx, images, archivePaths[0])
+		cmds = append(cmds, save)
+		if noCache {
+			cmds = append(cmds, from.Remove(ctx, images))
+		}
 		load := k.kind(ctx, []string{"load", "image-archive", archivePaths[0]})
-		return gosh.And(save, load)
+		cmds = append(cmds, load)
+		if noCache {
+			cmds = append(cmds, gosh.FromFunc(ctx, Rm(archivePaths[0])))
+		}
+		return gosh.And(cmds...)
 	}
 
 	for ix, path := range archivePaths {
+		cmds := make([]gosh.Commander, 0, 4)
 		save, _ := from.Save(ctx, []string{images[ix]}, path)
+		cmds = append(cmds, save)
+		if noCache {
+			cmds = append(cmds, from.Remove(ctx, []string{images[ix]}))
+		}
 		load := k.kind(ctx, []string{"load", "image-archive", path})
-		saves = append(saves, gosh.And(save, load))
+		cmds = append(cmds, load)
+		if noCache {
+			cmds = append(cmds, gosh.FromFunc(ctx, Rm(archivePaths[ix])))
+		}
+		saves = append(saves, gosh.And(cmds...))
 	}
 	return gosh.FanOut(saves...)
 }
