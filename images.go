@@ -142,7 +142,7 @@ type loadThirdPartyImageAction struct {
 
 func (l *loadThirdPartyImageAction) Setup(ctx context.Context, state *specState) error {
 	if state.suite.opts.NoLoadPulled {
-		By(fmt.Sprintf("SKIPPED: Loading image %s", state.thirdPartyImages[l.id].Name))
+		By(fmt.Sprintf("SKIPPED: Loading image %s", state.thirdPartyImages[l.imageID].Name))
 		return nil
 	}
 	defer ByStartStop(fmt.Sprintf("Loading image %s", state.thirdPartyImages[l.imageID].Name))()
