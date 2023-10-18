@@ -118,8 +118,8 @@ func (e *EnvTestCluster) GetConnection() *KubernetesConnection {
 	}
 }
 
-// GetTempPath returns the path to a file or directory to use for temporary operations against this cluster
-func (e *EnvTestCluster) GetTempPath(group string, path string) string {
+// GetTempDir returns the path to a file or directory to use for temporary operations against this cluster
+func (e *EnvTestCluster) GetTempDir() string {
 	return e.TempDir
 }
 

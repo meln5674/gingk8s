@@ -92,7 +92,7 @@ func (h *HelmCommand) InstallOrUpgrade(g Gingk8s, ctx context.Context, cluster C
 		if namespacePathPart == "" {
 			namespacePathPart = "_DEFAULT_"
 		}
-		valueDir := filepath.Join(cluster.GetTempPath("helm", filepath.Join("releases", namespacePathPart, release.Name, "values")))
+		valueDir := filepath.Join(ClusterTempPath(cluster, "helm", "releases", namespacePathPart, release.Name, "values"))
 		tempValueBasename := func(ix int) string {
 			return fmt.Sprintf("%d.yaml", ix)
 		}

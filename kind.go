@@ -206,8 +206,8 @@ func (k *KindCluster) GetConnection() *KubernetesConnection {
 }
 
 // GetTempPath implements cluster
-func (k *KindCluster) GetTempPath(group string, path string) string {
-	return filepath.Join(k.TempDir, "groups", group, path)
+func (k *KindCluster) GetTempDir() string {
+	return k.TempDir
 }
 
 // LoadImages implements cluster

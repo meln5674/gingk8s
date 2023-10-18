@@ -137,7 +137,7 @@ func (s *specState) serialize() serializableSpec {
 		Clusters: make(map[string]*DummyCluster, len(s.clusters)),
 	}
 	for k, v := range s.clusters {
-		serializable.Clusters[k] = &DummyCluster{Connection: *v.GetConnection()}
+		serializable.Clusters[k] = &DummyCluster{Connection: *v.GetConnection(), TempDir: v.GetTempDir()}
 	}
 	return serializable
 }

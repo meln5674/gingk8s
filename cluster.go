@@ -3,6 +3,7 @@ package gingk8s
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 
 	. "github.com/onsi/gomega"
 
@@ -87,8 +88,9 @@ type Cluster interface {
 	// GetConnection returns the kubeconfig, context, etc, to use to connect to the cluster's api server.
 	// GetConnection must not fail, so any potentially failing operations must be done during Create()
 	GetConnection() *KubernetesConnection
-	// GetTempPath returns the path to a file or directory to use for temporary operations against this cluster
-	GetTempPath(group string, path string) string
+	// GetTempDir returns a directory to use for temporary files related to this cluster.
+	// It must return the same value every time its called.
+	GetTempDir() string
 	// LoadImages loads a set of images of a given format from.
 	// If noCache is set, LoadImages must remove any copies of the image outside of the cluster.
 	LoadImages(ctx context.Context, from Images, format ImageFormat, images []string, noCache bool) gosh.Commander
@@ -96,10 +98,17 @@ type Cluster interface {
 	Delete(ctx context.Context) gosh.Commander
 }
 
+// returns the path to a file or directory to use for temporary operations against this cluster
+// group is an arbitrary string that will be used as a subdirectory, it is split for convenience to be used as a constant
+func ClusterTempPath(cluster Cluster, group string, path ...string) string {
+	return filepath.Join(append([]string{cluster.GetTempDir(), group}, path...)...)
+}
+
 // DummyCluster implements Cluster but only the methods Create() (which does nothing)
 // and GetConnection() (which returns a canned connection struct), any other calls panic
 type DummyCluster struct {
 	Connection KubernetesConnection
+	TempDir    string
 }
 
 func (d *DummyCluster) Create(ctx context.Context, skipExisting bool) gosh.Commander {
@@ -108,8 +117,8 @@ func (d *DummyCluster) Create(ctx context.Context, skipExisting bool) gosh.Comma
 func (d *DummyCluster) GetConnection() *KubernetesConnection {
 	return &d.Connection
 }
-func (d *DummyCluster) GetTempPath(group string, path string) string {
-	panic("UNSUPPORTED")
+func (d *DummyCluster) GetTempDir() string {
+	return d.TempDir
 }
 func (d *DummyCluster) LoadImages(ctx context.Context, from Images, format ImageFormat, images []string, noCache bool) gosh.Commander {
 	panic("UNSUPPORTED")
