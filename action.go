@@ -118,7 +118,7 @@ func (c *clusterActionAction) Setup(ctx context.Context, state *specState) error
 }
 
 func (c *clusterActionAction) Cleanup(ctx context.Context, state *specState) {
-	if state.suite.opts.NoSuiteCleanup {
+	if state.NoCleanup() {
 		return
 	}
 	if c.cleanup == nil {

@@ -56,7 +56,7 @@ func (r *releaseAction) Setup(ctx context.Context, state *specState) error {
 }
 
 func (r *releaseAction) Cleanup(ctx context.Context, state *specState) {
-	if state.suite.opts.NoSuiteCleanup {
+	if state.NoCleanup() {
 		return
 	}
 

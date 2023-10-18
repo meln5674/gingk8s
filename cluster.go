@@ -65,7 +65,7 @@ func (c *createClusterAction) Setup(ctx context.Context, state *specState) error
 }
 
 func (c *createClusterAction) Cleanup(ctx context.Context, state *specState) {
-	if state.suite.opts.NoSuiteCleanup {
+	if state.NoCleanup() {
 		return
 	}
 	defer ByStartStop(fmt.Sprintf("Deleting cluster"))()

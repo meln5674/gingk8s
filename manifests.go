@@ -51,7 +51,7 @@ func (m *manifestsAction) Setup(ctx context.Context, state *specState) error {
 }
 
 func (m *manifestsAction) Cleanup(ctx context.Context, state *specState) {
-	if state.suite.opts.NoSuiteCleanup {
+	if state.NoCleanup() {
 		return
 	}
 	defer ByStartStop("Deleteing a set of manifests")()

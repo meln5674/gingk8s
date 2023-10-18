@@ -85,6 +85,15 @@ type specState struct {
 	cleanup []*specNode
 }
 
+func (s *specState) NoCleanup() bool {
+	// If we have no parent, we must be the suite spec
+	if s.parent == nil {
+		return s.suite.opts.NoSuiteCleanup
+	} else {
+		return s.suite.opts.NoSpecCleanup
+	}
+}
+
 func (s *specState) getCluster(id string) Cluster {
 	c, ok := s.clusters[id]
 	if !ok && s.parent != nil {
