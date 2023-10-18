@@ -6,6 +6,8 @@ import (
 	"sync"
 
 	"github.com/meln5674/godag"
+
+	. "github.com/onsi/ginkgo/v2"
 )
 
 var cleanLock = sync.Mutex{}
@@ -31,7 +33,7 @@ type specNode struct {
 var _ = godag.Node[string, *specNode](&specNode{})
 
 func (s *specNode) DoDAGTask() ([]*specNode, error) {
-	// defer GinkgoRecover()
+	defer GinkgoRecover()
 	defer ByStartStop(fmt.Sprintf("Gingk8s Node: %s", s.id))()
 	err := s.Setup(s.ctx, s.state)
 	if err != nil {
@@ -58,6 +60,7 @@ type cleanupSpecNode struct {
 }
 
 func (s cleanupSpecNode) DoDAGTask() ([]cleanupSpecNode, error) {
+	defer GinkgoRecover()
 	s.specNode.Cleanup(s.ctx, s.state)
 	return nil, nil
 }
