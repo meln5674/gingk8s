@@ -297,6 +297,37 @@ func (k *KubectlCommand) Kubectl(ctx context.Context, cluster Cluster, args []st
 	return gosh.Command(cmd...).WithContext(ctx).WithStreams(GinkgoOutErr)
 }
 
+func (k *KubectlCommand) ResourceObjectsYAML(g Gingk8s, ctx context.Context, cluster Cluster, out io.Writer, objects []interface{}) error {
+	for _, obj := range objects {
+		var err error
+		var resolved interface{}
+		switch v := obj.(type) {
+		case Object:
+			resolved, err = resolveRObject(g, ctx, cluster, reflect.ValueOf(v))
+		case NestedObject:
+			resolved, err = resolveRNestedObject(g, ctx, cluster, reflect.ValueOf(v))
+		default:
+			resolved = v
+		}
+		if err != nil {
+			return err
+		}
+		objBytes, err := yamlwriter.Marshal(resolved)
+		if err != nil {
+			return err
+		}
+		_, err = out.Write(objBytes)
+		if err != nil {
+			return err
+		}
+		_, err = out.Write([]byte("\n---\n"))
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // CreateOrUpates implements Manifests
 func (k *KubectlCommand) CreateOrUpdate(g Gingk8s, ctx context.Context, cluster Cluster, manifests *KubernetesManifests) gosh.Commander {
 	applies := []gosh.Commander{}
@@ -344,34 +375,7 @@ func (k *KubectlCommand) CreateOrUpdate(g Gingk8s, ctx context.Context, cluster 
 					var err error
 					defer func() { done <- err; close(done) }()
 					err = func() error {
-						for _, obj := range manifests.ResourceObjects {
-							var err error
-							var resolved interface{}
-							switch v := obj.(type) {
-							case Object:
-								resolved, err = resolveRObject(g, ctx, cluster, reflect.ValueOf(v))
-							case NestedObject:
-								resolved, err = resolveRNestedObject(g, ctx, cluster, reflect.ValueOf(v))
-							default:
-								resolved = v
-							}
-							if err != nil {
-								return err
-							}
-							objBytes, err := yamlwriter.Marshal(resolved)
-							if err != nil {
-								return err
-							}
-							_, err = stdout.Write(objBytes)
-							if err != nil {
-								return err
-							}
-							_, err = stdout.Write([]byte("\n---\n"))
-							if err != nil {
-								return err
-							}
-						}
-						return nil
+						return k.ResourceObjectsYAML(g, ctx, cluster, stdout, manifests.ResourceObjects)
 					}()
 				}()
 				return nil
@@ -406,13 +410,26 @@ func (k *KubectlCommand) Delete(g Gingk8s, ctx context.Context, cluster Cluster,
 	cmds := []gosh.Commander{}
 	applyFileArgs := func(path string, recursive bool) []string {
 		args := []string{"delete", "--filename", path}
-		if manifests.Replace {
-			args = append(args, "--replace")
-		}
 		if recursive {
 			args = append(args, "--recursive")
 		}
 		return args
+	}
+	if len(manifests.ResourceObjects) != 0 {
+		cmds = append(cmds, gosh.Pipeline(
+			gosh.FromFunc(ctx, func(ctx context.Context, stdin io.Reader, stdout, stderr io.Writer, done chan error) error {
+				go func() {
+					defer GinkgoRecover()
+					var err error
+					defer func() { done <- err; close(done) }()
+					err = func() error {
+						return k.ResourceObjectsYAML(g, ctx, cluster, stdout, manifests.ResourceObjects)
+					}()
+				}()
+				return nil
+			}),
+			k.Kubectl(ctx, cluster, applyFileArgs("-", false)),
+		))
 	}
 	for _, resource := range manifests.Resources {
 		cmds = append(cmds, k.Kubectl(ctx, cluster, applyFileArgs("-", false)).WithStreams(gosh.StringIn(resource)))

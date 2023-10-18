@@ -43,10 +43,10 @@ type manifestsAction struct {
 
 func (m *manifestsAction) Setup(ctx context.Context, state *specState) error {
 	if state.suite.opts.NoDeps {
-		By(fmt.Sprintf("SKIPPED: Creating manifest set %s", state.manifests[m.id].Name))
+		By(fmt.Sprintf("SKIPPED: Creating Manifests %s", state.manifests[m.id].Name))
 		return nil
 	}
-	defer ByStartStop(fmt.Sprintf("Creating manifest set %s", state.manifests[m.id].Name))()
+	defer ByStartStop(fmt.Sprintf("Creating Manifests %s", state.manifests[m.id].Name))()
 	return state.suite.opts.Manifests.CreateOrUpdate(m.g, ctx, state.getCluster(m.clusterID), state.manifests[m.id]).Run()
 }
 
@@ -54,7 +54,7 @@ func (m *manifestsAction) Cleanup(ctx context.Context, state *specState) {
 	if state.NoCleanup() {
 		return
 	}
-	defer ByStartStop("Deleteing a set of manifests")()
+	defer ByStartStop(fmt.Sprintf("Deleting Manifests %s", state.manifests[m.id].Name))()
 	Expect(state.suite.opts.Manifests.Delete(m.g, ctx, state.getCluster(m.clusterID), state.manifests[m.id]).Run()).To(Succeed())
 }
 
