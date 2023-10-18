@@ -15,7 +15,7 @@ import (
 
 // RandomNamespace creates a new namespace with a randomized name
 type RandomNamespace struct {
-	namespace string
+	namespace *string
 	// If running on a cluster without the controller-manager (e.g. envtest), this must be true,
 	// otherwise, the namespace will never terminate
 	NeedFinalize bool
@@ -23,7 +23,10 @@ type RandomNamespace struct {
 
 // Get returns the namespace that was created
 func (r *RandomNamespace) Get() string {
-	return r.namespace
+	if r.namespace == nil {
+		panic("RandomNamespace.Get() called before Gingk8s.Setup()")
+	}
+	return *r.namespace
 }
 
 func (r *RandomNamespace) Setup(g Gingk8s, ctx context.Context, cluster Cluster) error {
@@ -31,13 +34,14 @@ func (r *RandomNamespace) Setup(g Gingk8s, ctx context.Context, cluster Cluster)
 	if err != nil {
 		return err
 	}
-	r.namespace = namespaceUUID.String()
+	name := namespaceUUID.String()
+	r.namespace = &name
 
-	return g.Kubectl(ctx, cluster, "create", "namespace", r.namespace).Run()
+	return g.Kubectl(ctx, cluster, "create", "namespace", name).Run()
 }
 func (r *RandomNamespace) Cleanup(g Gingk8s, ctx context.Context, cluster Cluster) error {
 	cmds := []gosh.Commander{
-		g.Kubectl(ctx, cluster, "delete", "namespace", r.namespace).WithStreams(GinkgoOutErr),
+		g.Kubectl(ctx, cluster, "delete", "namespace", *r.namespace).WithStreams(GinkgoOutErr),
 	}
 	if r.NeedFinalize {
 		// https://stackoverflow.com/a/62959634/17621440
@@ -54,7 +58,7 @@ func (r *RandomNamespace) Cleanup(g Gingk8s, ctx context.Context, cluster Cluste
 				return nil
 			}),
 			gosh.Pipeline(
-				g.Kubectl(ctx, cluster, "get", "namespace", r.namespace, "-o", "json"),
+				g.Kubectl(ctx, cluster, "get", "namespace", *r.namespace, "-o", "json"),
 				gosh.FromFunc(ctx, func(ctx context.Context, stdin io.Reader, stdout, stderr io.Writer, done chan error) error {
 					go func() {
 						defer close(done)
@@ -75,7 +79,7 @@ func (r *RandomNamespace) Cleanup(g Gingk8s, ctx context.Context, cluster Cluste
 					}()
 					return nil
 				}),
-				g.Kubectl(ctx, cluster, "replace", "--raw", fmt.Sprintf("/api/v1/namespaces/%s/finalize", r.namespace), "-f", "-"),
+				g.Kubectl(ctx, cluster, "replace", "--raw", fmt.Sprintf("/api/v1/namespaces/%s/finalize", *r.namespace), "-f", "-"),
 			)).WithStreams(GinkgoOutErr)
 		cmds = append(cmds, finalize)
 	}
