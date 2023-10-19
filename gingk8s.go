@@ -100,7 +100,7 @@ func (g *Gingk8s) Setup(ctx context.Context) {
 	for _, repo := range repos {
 		repoAdds = append(repoAdds, g.suite.opts.Helm.AddRepo(ctx, repo))
 	}
-	Expect(gosh.FanOut(repoAdds...).Run()).To(Succeed())
+	Expect(gosh.FanOut(repoAdds...).WithLog(log).Run()).To(Succeed())
 
 	ex := godag.Executor[string, *specNode]{
 		Log: log.WithName("Setup"),

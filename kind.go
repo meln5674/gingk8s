@@ -37,7 +37,7 @@ func (k *KindCommand) kind(ctx context.Context, args []string) *gosh.Cmd {
 		cmd = append(cmd, DefaultKindCommand...)
 	}
 	cmd = append(cmd, args...)
-	return gosh.Command(cmd...).WithContext(ctx).WithStreams(GinkgoOutErr)
+	return gosh.Command(cmd...).WithContext(ctx).WithStreams(GinkgoOutErr).WithLog(log)
 }
 
 // KindCluster represents a kubernetes cluster made with `kind create cluster`
@@ -260,7 +260,7 @@ func (k *KindCluster) LoadImages(ctx context.Context, from Images, format ImageF
 		}
 		saves = append(saves, gosh.And(cmds...))
 	}
-	return gosh.FanOut(saves...)
+	return gosh.FanOut(saves...).WithLog(log)
 }
 
 // Delete implements cluster
@@ -278,7 +278,7 @@ func (k *KindCluster) Delete(ctx context.Context) gosh.Commander {
 	}
 	rmCmd = append(rmCmd, toDelete...)
 	if len(toDelete) != 0 {
-		return gosh.And(deleteCluster, gosh.Command(rmCmd...).WithStreams(GinkgoOutErr))
+		return gosh.And(deleteCluster, gosh.Command(rmCmd...).WithStreams(GinkgoOutErr).WithLog(log))
 	} else {
 		return deleteCluster
 	}

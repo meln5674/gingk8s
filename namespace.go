@@ -83,5 +83,5 @@ func (r *RandomNamespace) Cleanup(g Gingk8s, ctx context.Context, cluster Cluste
 			)).WithStreams(GinkgoOutErr)
 		cmds = append(cmds, finalize)
 	}
-	return gosh.FanOut(cmds...).Run()
+	return gosh.FanOut(cmds...).WithLog(log).Run()
 }

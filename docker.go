@@ -27,7 +27,7 @@ func (d *DockerCommand) docker(ctx context.Context, args []string) *gosh.Cmd {
 		cmd = append(cmd, DefaultDockerCommand...)
 	}
 	cmd = append(cmd, args...)
-	return gosh.Command(cmd...).WithContext(ctx).WithStreams(GinkgoOutErr)
+	return gosh.Command(cmd...).WithContext(ctx).WithStreams(GinkgoOutErr).WithLog(log)
 }
 
 // Pull implements Images

@@ -41,7 +41,7 @@ func (h *HelmCommand) helm(ctx context.Context, kube *KubernetesConnection, args
 		cmd = append(cmd, "--context", kube.Context)
 	}
 	cmd = append(cmd, args...)
-	return gosh.Command(cmd...).WithContext(ctx).WithStreams(GinkgoOutErr)
+	return gosh.Command(cmd...).WithContext(ctx).WithStreams(GinkgoOutErr).WithLog(log)
 }
 
 // AddRepo implements Helm

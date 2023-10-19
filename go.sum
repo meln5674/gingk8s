@@ -22,6 +22,7 @@ github.com/fsnotify/fsnotify v1.6.0 h1:n+5WquG0fcWoWp6xPWfHdbskMCQaFnG6PfBrh1Ky4
 github.com/go-logr/logr v1.2.0/go.mod h1:jdQByPbusPIv2/zmleS9BjJVeZ6kBagPoEUsqbVz/1A=
 github.com/go-logr/logr v1.2.4 h1:g01GSCwiDw2xSZfjJ2/T9M+S6pFdcNtFYsp+Y43HYDQ=
 github.com/go-logr/logr v1.2.4/go.mod h1:jdQByPbusPIv2/zmleS9BjJVeZ6kBagPoEUsqbVz/1A=
+github.com/go-logr/stdr v1.2.2 h1:hSWxHoqTgW2S2qGc0LTAI563KZ5YKYRhT3MFKZMbjag=
 github.com/go-logr/zapr v1.2.4 h1:QHVo+6stLbfJmYGkQ7uGHUCu5hnAFAj6mDe6Ea0SeOo=
 github.com/go-openapi/jsonpointer v0.19.6 h1:eCs3fxoIi3Wh6vtgmLTOjdhSpiqphQ+DaPn38N2ZdrE=
 github.com/go-openapi/jsonpointer v0.19.6/go.mod h1:osyAmYz/mB/C3I+WsTTSgw1ONzaLJoLCyoi6/zppojs=
@@ -87,8 +88,8 @@ github.com/mailru/easyjson v0.7.7/go.mod h1:xzfreul335JAWq5oZzymOObrkdz5UnU4kGfJ
 github.com/matttproud/golang_protobuf_extensions v1.0.4 h1:mmDVorXM7PCGKw94cs5zkfA9PSy5pEvNWRP0ET0TIVo=
 github.com/meln5674/godag v0.3.0-rc4 h1:sVjAV2n2Rpcmm8faad5eg7z+HaHO14fNCRlIF5uSc/A=
 github.com/meln5674/godag v0.3.0-rc4/go.mod h1:I1NjQA+RbjGnOzfuU7STLQak+XVwY6e/mTONB8bGKB0=
-github.com/meln5674/gosh v0.0.0-20230418002009-f731b8b62575 h1:ISvjhVD+W1vfvQO9Yy9ysGCxUhhxDG+l+Pmd1F0xJmc=
-github.com/meln5674/gosh v0.0.0-20230418002009-f731b8b62575/go.mod h1:ZEvBGjiPHZWR1l61SoCJcduUQ/tFKw9iQ+X86i5engI=
+github.com/meln5674/gosh v0.0.0-20231019162727-b5f0766a9088 h1:7VWzV4QxV8xnoptSS7JlBTBJ0GQid46yN4uF5Aju+74=
+github.com/meln5674/gosh v0.0.0-20231019162727-b5f0766a9088/go.mod h1:JJOGeVOjaHIPlWYd4Q0UHDCIihocjODnZtBswWrzP+U=
 github.com/modern-go/concurrent v0.0.0-20180228061459-e0a39a4cb421/go.mod h1:6dJC0mAP4ikYIbvyc7fijjWJddQyLn8Ig3JB5CqoB9Q=
 github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd h1:TRLaZ9cD/w8PVh93nsPXa1VrQ6jlwL5oN8l14QlcNfg=
 github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd/go.mod h1:6dJC0mAP4ikYIbvyc7fijjWJddQyLn8Ig3JB5CqoB9Q=

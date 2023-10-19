@@ -223,7 +223,7 @@ func (g Gingk8s) KubectlWait(ctx context.Context, cluster Cluster, fors ...WaitF
 		}
 		waits = append(waits, g.suite.opts.Kubectl.Kubectl(ctx, cluster, args))
 	}
-	return gosh.FanOut(waits...)
+	return gosh.FanOut(waits...).WithLog(log)
 }
 
 func (g Gingk8s) KubectlRollout(ctx context.Context, cluster Cluster, ref ResourceReference) gosh.Commander {
@@ -294,7 +294,7 @@ func (k *KubectlCommand) Kubectl(ctx context.Context, cluster Cluster, args []st
 	}
 	cmd = append(cmd, args...)
 
-	return gosh.Command(cmd...).WithContext(ctx).WithStreams(GinkgoOutErr)
+	return gosh.Command(cmd...).WithContext(ctx).WithStreams(GinkgoOutErr).WithLog(log)
 }
 
 func (k *KubectlCommand) ResourceObjectsYAML(g Gingk8s, ctx context.Context, cluster Cluster, out io.Writer, objects []interface{}) error {
@@ -401,7 +401,7 @@ func (k *KubectlCommand) CreateOrUpdate(g Gingk8s, ctx context.Context, cluster 
 		}
 		waits = append(waits, k.Kubectl(ctx, cluster, args))
 	}
-	return gosh.And(gosh.FanOut(applies...), gosh.FanOut(waits...))
+	return gosh.And(gosh.FanOut(applies...).WithLog(log), gosh.FanOut(waits...).WithLog(log))
 }
 
 // Delete implements Manifests
@@ -440,6 +440,6 @@ func (k *KubectlCommand) Delete(g Gingk8s, ctx context.Context, cluster Cluster,
 	for _, path := range manifests.ResourceRecursiveDirs {
 		cmds = append(cmds, k.Kubectl(ctx, cluster, applyFileArgs(path, true)))
 	}
-	//return gosh.FanOut(cmds...)
+	//return gosh.FanOut(cmds...).WithLog(log)
 	return gosh.And(cmds...)
 }
