@@ -72,6 +72,13 @@ type HelmRepo struct {
 	URL string
 	// Flags are any extra flags to provide to the `helm repo add` command
 	Flags []string
+	// Update indicates that `helm repo update` should be run for this repo
+	Update bool
+}
+
+type HelmRegistry struct {
+	Hostname   string
+	LoginFlags []string
 }
 
 // LocalChartInfo is a reference to a helm chart from a local directory or tarball
@@ -91,12 +98,24 @@ type RemoteChartInfo struct {
 	Version string
 }
 
+// OCIChartInfo is a reference to a helm chart from a local directory or tarball
+type OCIChartInfo struct {
+	// Registry is the image registry of the chart
+	Registry HelmRegistry
+	// Repository is the repository of the chart within the registry
+	Repository string
+	// Version is the version of the chart, or equivalently, the tag of the OCI artifact in the repository
+	Version string
+}
+
 // HelmChart represents a chart to be installed
 type HelmChart struct {
-	// LocalChartInfo is the location of the local chart. Mutually exclusive with RemoteChartInfo
+	// LocalChartInfo is the location of the local chart. Mutually exclusive with RemoteChartInfo and OCIChartInfo
 	LocalChartInfo
-	// RemoteChartInfo is the location of the remote chart. Mutually exclusive with LocalChartInfo
+	// RemoteChartInfo is the location of the remote chart. Mutually exclusive with LocalChartInfo and OCIChartInfo
 	RemoteChartInfo
+	// OCIChartInfo is the location of a chart in an OCI registry. Mutually exclusive with LocalChartInfo and RemoteChartInfo
+	OCIChartInfo
 
 	// UpgradeFlags are extra flags to pass to the `helm upgrade` command
 	UpgradeFlags []string
@@ -106,6 +125,10 @@ func (h *HelmChart) IsLocal() bool {
 	return h.Path != ""
 }
 
+func (h *HelmChart) IsOCI() bool {
+	return h.Registry.Hostname != ""
+}
+
 func (h *HelmChart) Fullname() string {
 	if h.IsLocal() {
 		if !strings.HasPrefix(h.Path, "./") && !strings.HasPrefix(h.Path, "../") {
@@ -113,8 +136,20 @@ func (h *HelmChart) Fullname() string {
 		} else {
 			return h.Path
 		}
+	}
+	if h.IsOCI() {
+		return "oci://" + h.Registry.Hostname + "/" + h.Repository
+	}
+	return h.Repo.Name + "/" + h.Name
+}
+
+func (h *HelmChart) Version() string {
+	if h.IsOCI() {
+		return h.OCIChartInfo.Version
+	} else if h.IsLocal() {
+		return ""
 	} else {
-		return h.Repo.Name + "/" + h.Name
+		return h.RemoteChartInfo.Version
 	}
 }
 

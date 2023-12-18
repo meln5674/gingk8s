@@ -48,6 +48,18 @@ func (h *HelmCommand) helm(ctx context.Context, kube *KubernetesConnection, args
 func (h *HelmCommand) AddRepo(ctx context.Context, repo *HelmRepo) gosh.Commander {
 	args := []string{"repo", "add", repo.Name, repo.URL}
 	args = append(args, repo.Flags...)
+	add := h.helm(ctx, &KubernetesConnection{}, args)
+	if !repo.Update {
+		return add
+	}
+	args = []string{"repo", "update", repo.Name}
+	return gosh.And(add, h.helm(ctx, &KubernetesConnection{}, args))
+}
+
+// RegistryLogin implements Helm
+func (h *HelmCommand) RegistryLogin(ctx context.Context, registry *HelmRegistry) gosh.Commander {
+	args := []string{"registry", "login"}
+	args = append(args, registry.LoginFlags...)
 	return h.helm(ctx, &KubernetesConnection{}, args)
 }
 
@@ -59,8 +71,9 @@ func (h *HelmCommand) InstallOrUpgrade(g Gingk8s, ctx context.Context, cluster C
 	if !release.NoWait {
 		args = append(args, "--wait")
 	}
-	if !release.Chart.IsLocal() && release.Chart.Version != "" {
-		args = append(args, "--version", release.Chart.Version)
+	version := release.Chart.Version()
+	if version != "" {
+		args = append(args, "--version", version)
 	}
 	args = append(args, release.Chart.UpgradeFlags...)
 	args = append(args, release.ExtraFlags...)

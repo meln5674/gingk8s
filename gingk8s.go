@@ -85,7 +85,7 @@ func (g *Gingk8s) Setup(ctx context.Context) {
 	repoReleases := make(map[string]string)
 
 	for _, release := range g.releases {
-		if !release.Chart.IsLocal() {
+		if !release.Chart.IsLocal() && !release.Chart.IsOCI() {
 			existing, ok := repos[release.Chart.Name]
 			if !ok {
 				repos[release.Chart.Repo.Name] = release.Chart.Repo
