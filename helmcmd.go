@@ -27,7 +27,11 @@ type HelmCommand struct {
 
 var _ = Helm(&HelmCommand{})
 
-func (h *HelmCommand) helm(ctx context.Context, kube *KubernetesConnection, args []string) gosh.Commander {
+func (h *HelmCommand) Helm(ctx context.Context, kube *KubernetesConnection, args ...string) gosh.Pipelineable {
+	return h.helm(ctx, kube, args)
+}
+
+func (h *HelmCommand) helm(ctx context.Context, kube *KubernetesConnection, args []string) gosh.Pipelineable {
 	cmd := []string{}
 	if len(h.Command) != 0 {
 		cmd = append(cmd, h.Command...)
