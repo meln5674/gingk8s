@@ -55,7 +55,7 @@ func (r *releaseAction) Setup(ctx context.Context, state *specState) error {
 }
 
 func (r *releaseAction) Cleanup(ctx context.Context, state *specState) {
-	if state.NoCleanup() {
+	if state.NoCleanup() || state.releases[r.id].SkipDelete {
 		return
 	}
 	Expect(state.suite.opts.Helm.Delete(ctx, state.getCluster(r.clusterID), state.releases[r.id], true).Run()).To(Succeed())
@@ -183,6 +183,8 @@ type HelmRelease struct {
 	// NoWait, if true, prevents gingk8s from waiting for the helm release to become healthy (e.g. --wait).
 	// This is useful is a release is expected to be in a failing state until an event in a child spec takes place
 	NoWait bool
+
+	SkipDelete bool
 }
 
 // Helm knows how to install and uninstall helm charts
