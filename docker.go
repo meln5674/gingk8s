@@ -30,6 +30,10 @@ func (d *DockerCommand) docker(ctx context.Context, args []string) *gosh.Cmd {
 	return gosh.Command(cmd...).WithContext(ctx).WithStreams(GinkgoOutErr).WithLog(log)
 }
 
+func (d *DockerCommand) Docker(ctx context.Context, args ...string) *gosh.Cmd {
+	return d.docker(ctx, args)
+}
+
 // Pull implements Images
 func (d *DockerCommand) Pull(ctx context.Context, image *ThirdPartyImage) gosh.Commander {
 	pull := d.docker(ctx, []string{"pull", image.Name})

@@ -22,7 +22,7 @@ func (g Gingk8s) Manifests(cluster ClusterID, manifests *KubernetesManifests, de
 	manifestID := newID()
 	g.manifests[manifestID] = manifests
 
-	dependsOn := append([]string{cluster.id}, forResourceDependencies(deps...).allIDs(cluster.id)...)
+	dependsOn := append([]string{cluster.id}, forResourceDependencies(deps...).allIDs(g.specState, cluster.id)...)
 	node := specNode{
 		state:      g.specState,
 		id:         manifestID,
@@ -46,7 +46,6 @@ func (m *manifestsAction) Setup(ctx context.Context, state *specState) error {
 		By(fmt.Sprintf("SKIPPED: Creating Manifests %s", state.manifests[m.id].Name))
 		return nil
 	}
-	defer ByStartStop(fmt.Sprintf("Creating Manifests %s", state.manifests[m.id].Name))()
 	return state.suite.opts.Manifests.CreateOrUpdate(m.g, ctx, state.getCluster(m.clusterID), state.manifests[m.id]).Run()
 }
 
@@ -54,8 +53,11 @@ func (m *manifestsAction) Cleanup(ctx context.Context, state *specState) {
 	if state.NoCleanup() {
 		return
 	}
-	defer ByStartStop(fmt.Sprintf("Deleting Manifests %s", state.manifests[m.id].Name))()
 	Expect(state.suite.opts.Manifests.Delete(m.g, ctx, state.getCluster(m.clusterID), state.manifests[m.id]).Run()).To(Succeed())
+}
+
+func (m *manifestsAction) Title(state *specState) string {
+	return state.manifests[m.id].Name
 }
 
 var (

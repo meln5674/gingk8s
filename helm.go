@@ -28,7 +28,7 @@ func (g Gingk8s) Release(cluster ClusterID, release *HelmRelease, deps ...Resour
 	releaseID := newID()
 	g.releases[releaseID] = release
 
-	dependsOn := append([]string{cluster.id}, forResourceDependencies(deps...).allIDs(cluster.id)...)
+	dependsOn := append([]string{cluster.id}, forResourceDependencies(deps...).allIDs(g.specState, cluster.id)...)
 	node := specNode{
 		state:      g.specState,
 		id:         releaseID,
@@ -51,7 +51,6 @@ func (r *releaseAction) Setup(ctx context.Context, state *specState) error {
 	if state.suite.opts.NoDeps {
 		return nil
 	}
-	defer ByStartStop(fmt.Sprintf("Creating helm release %s", state.releases[r.id].Name))()
 	return state.suite.opts.Helm.InstallOrUpgrade(r.g, ctx, state.getCluster(r.clusterID), state.releases[r.id]).Run()
 }
 
@@ -59,9 +58,11 @@ func (r *releaseAction) Cleanup(ctx context.Context, state *specState) {
 	if state.NoCleanup() {
 		return
 	}
-
-	defer ByStartStop(fmt.Sprintf("Deleting helm release %s", state.releases[r.id].Name))()
 	Expect(state.suite.opts.Helm.Delete(ctx, state.getCluster(r.clusterID), state.releases[r.id], true).Run()).To(Succeed())
+}
+
+func (r *releaseAction) Title(state *specState) string {
+	return fmt.Sprintf("Creating helm release %s", state.releases[r.id].Name)
 }
 
 // HelmRepo represents a repository to pull helm charts from
@@ -131,7 +132,7 @@ func (h *HelmChart) IsOCI() bool {
 
 func (h *HelmChart) Fullname() string {
 	if h.IsLocal() {
-		if !strings.HasPrefix(h.Path, "./") && !strings.HasPrefix(h.Path, "../") {
+		if !strings.HasPrefix(h.Path, "/") && !strings.HasPrefix(h.Path, "./") && !strings.HasPrefix(h.Path, "../") {
 			return "./" + h.Path
 		} else {
 			return h.Path

@@ -210,6 +210,14 @@ func (k *KindCluster) GetTempDir() string {
 	return k.TempDir
 }
 
+// GetName implements cluster
+func (k *KindCluster) GetName() string {
+	if k.Name == "" {
+		return "KinD"
+	}
+	return k.Name
+}
+
 // LoadImages implements cluster
 func (k *KindCluster) LoadImages(ctx context.Context, from Images, format ImageFormat, images []string, noCache bool) gosh.Commander {
 	if len(images) == 0 {
@@ -261,6 +269,15 @@ func (k *KindCluster) LoadImages(ctx context.Context, from Images, format ImageF
 		saves = append(saves, gosh.And(cmds...))
 	}
 	return gosh.FanOut(saves...).WithLog(log)
+}
+
+// LoadImageArchive implements cluster
+func (k *KindCluster) LoadImageArchives(ctx context.Context, format ImageFormat, archives []string) gosh.Commander {
+	loads := make([]gosh.Commander, len(archives))
+	for ix, archive := range archives {
+		loads[ix] = k.kind(ctx, []string{"load", "image-archive", archive})
+	}
+	return gosh.FanOut(loads...).WithLog(log)
 }
 
 // Delete implements cluster

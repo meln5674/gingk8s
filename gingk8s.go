@@ -50,8 +50,7 @@ func (g Gingk8s) GetOptions() SuiteOpts {
 }
 
 func (g Gingk8s) ForSpec() Gingk8s {
-	child := g.child()
-	return Gingk8s{specState: &child}
+	return Gingk8s{specState: g.child()}
 }
 
 func (g *Gingk8s) Setup(ctx context.Context) {
@@ -117,16 +116,19 @@ func (g *Gingk8s) Setup(ctx context.Context) {
 			len(g.parent.clusters)+
 				len(g.parent.thirdPartyImages)+
 				len(g.parent.customImages)+
+				len(g.parent.imageArchives)+
 				len(g.parent.releases)+
 				len(g.parent.clusterActions)+
 				len(g.parent.manifests),
 		)
 		for id := range g.parent.clusters {
-			noopIDs = append(noopIDs, id)
 			for _, id := range g.parent.clusterCustomLoads[id] {
 				noopIDs = append(noopIDs, id)
 			}
 			for _, id := range g.parent.clusterThirdPartyLoads[id] {
+				noopIDs = append(noopIDs, id)
+			}
+			for _, id := range g.parent.clusterImageArchiveLoads[id] {
 				noopIDs = append(noopIDs, id)
 			}
 		}
@@ -134,6 +136,9 @@ func (g *Gingk8s) Setup(ctx context.Context) {
 			noopIDs = append(noopIDs, id)
 		}
 		for id := range g.parent.customImages {
+			noopIDs = append(noopIDs, id)
+		}
+		for id := range g.parent.imageArchives {
 			noopIDs = append(noopIDs, id)
 		}
 		for id := range g.parent.releases {
@@ -181,7 +186,7 @@ func (g *Gingk8s) Setup(ctx context.Context) {
 		}
 
 		reversed := godag.Reverse[string, cleanupSpecNode](cleanupDag)
-		log.Info("Cleaning up", "reversedDAG", reversed)
+		log.V(10).Info("Cleaning up", "reversedDAG", reversed)
 		Expect(cleanupEx.Run(ctx, reversed, godag.Options[string]{
 			StartFrom: startFrom,
 		})).To(Succeed())

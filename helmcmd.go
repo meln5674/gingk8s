@@ -10,6 +10,7 @@ import (
 
 	"github.com/meln5674/gosh"
 	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 	"sigs.k8s.io/yaml"
 )
 
@@ -27,11 +28,11 @@ type HelmCommand struct {
 
 var _ = Helm(&HelmCommand{})
 
-func (h *HelmCommand) Helm(ctx context.Context, kube *KubernetesConnection, args ...string) gosh.Pipelineable {
+func (h *HelmCommand) Helm(ctx context.Context, kube *KubernetesConnection, args ...string) *gosh.Cmd {
 	return h.helm(ctx, kube, args)
 }
 
-func (h *HelmCommand) helm(ctx context.Context, kube *KubernetesConnection, args []string) gosh.Pipelineable {
+func (h *HelmCommand) helm(ctx context.Context, kube *KubernetesConnection, args []string) *gosh.Cmd {
 	cmd := []string{}
 	if len(h.Command) != 0 {
 		cmd = append(cmd, h.Command...)
@@ -88,9 +89,7 @@ func (h *HelmCommand) InstallOrUpgrade(g Gingk8s, ctx context.Context, cluster C
 	for k, v := range release.Set {
 		s := strings.Builder{}
 		err := valueString(g, ctx, cluster, &s, v)
-		if err != nil {
-			panic(err)
-		}
+		Expect(err).ToNot(HaveOccurred())
 		args = append(args, "--set", fmt.Sprintf("%s=%s", k, s.String()))
 	}
 	for k, v := range release.SetString {
@@ -167,7 +166,7 @@ func (h *HelmCommand) InstallOrUpgrade(g Gingk8s, ctx context.Context, cluster C
 
 // Delete implements Helm
 func (h *HelmCommand) Delete(ctx context.Context, cluster Cluster, release *HelmRelease, skipNotExists bool) gosh.Commander {
-	args := []string{"delete", release.Name, "--wait"}
+	args := []string{"delete", release.Name, "--wait", "--debug"}
 	if release.Namespace != "" {
 		args = append(args, "--namespace", release.Namespace)
 	}

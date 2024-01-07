@@ -2,7 +2,6 @@ package gingk8s
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/meln5674/gosh"
 	. "github.com/onsi/gomega"
@@ -64,6 +63,18 @@ func (c ClusterCommander) Cleanup(g Gingk8s, ctx context.Context, cluster Cluste
 	return nil
 }
 
+type ClusterDaemonCommander struct {
+	gosh.Commander
+}
+
+func (c ClusterDaemonCommander) Setup(g Gingk8s, ctx context.Context, cluster Cluster) error {
+	return c.Start()
+}
+
+func (c ClusterDaemonCommander) Cleanup(g Gingk8s, ctx context.Context, cluster Cluster) error {
+	return c.Kill()
+}
+
 type ClusterActionFuncs struct {
 	SetupFunc   func(Gingk8s, context.Context, Cluster) error
 	CleanupFunc func(Gingk8s, context.Context, Cluster) error
@@ -81,7 +92,7 @@ func (g Gingk8s) ClusterAction(cluster ClusterID, name string, c ClusterActionab
 	actionID := newID()
 	g.clusterActions[actionID] = c.Setup
 
-	dependsOn := append([]string{cluster.id}, forResourceDependencies(deps...).allIDs(cluster.id)...)
+	dependsOn := append([]string{cluster.id}, forResourceDependencies(deps...).allIDs(g.specState, cluster.id)...)
 	node := specNode{
 		state:     g.specState,
 		id:        actionID,
@@ -98,7 +109,6 @@ func (g Gingk8s) ClusterAction(cluster ClusterID, name string, c ClusterActionab
 	g.setup = append(g.setup, &node)
 
 	return ClusterActionID{id: actionID}
-
 }
 
 type clusterActionAction struct {
@@ -110,10 +120,11 @@ type clusterActionAction struct {
 }
 
 func (c *clusterActionAction) Setup(ctx context.Context, state *specState) error {
-	if state.suite.opts.NoDeps {
-		return nil
-	}
-	defer ByStartStop(fmt.Sprintf("Executing action %s", c.name))()
+	/*
+		if state.suite.opts.NoDeps {
+			return nil
+		}
+	*/
 	return state.clusterActions[c.id](c.g, ctx, state.getCluster(c.clusterID))
 }
 
@@ -125,6 +136,9 @@ func (c *clusterActionAction) Cleanup(ctx context.Context, state *specState) {
 		return
 	}
 
-	defer ByStartStop(fmt.Sprintf("Undoing action %s", c.name))()
 	Expect(c.cleanup(c.g, ctx, state.getCluster(c.clusterID))).To(Succeed())
+}
+
+func (c *clusterActionAction) Title(*specState) string {
+	return c.name
 }

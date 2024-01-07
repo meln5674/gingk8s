@@ -18,6 +18,7 @@ import (
 type EnvTestCluster struct {
 	Environment envtest.Environment
 	TempDir     string
+	Name        string
 }
 
 func (e *EnvTestCluster) KubeconfigPath() string {
@@ -121,6 +122,15 @@ func (e *EnvTestCluster) GetConnection() *KubernetesConnection {
 // GetTempDir returns the path to a file or directory to use for temporary operations against this cluster
 func (e *EnvTestCluster) GetTempDir() string {
 	return e.TempDir
+}
+
+// GetName returns a user-supplied name for this cluster
+func (e *EnvTestCluster) GetName() string {
+	name := e.Name
+	if name != "" {
+		return name
+	}
+	return "envtest"
 }
 
 // LoadImages loads a set of images of a given format from.

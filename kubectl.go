@@ -3,6 +3,7 @@ package gingk8s
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -14,7 +15,6 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"k8s.io/apimachinery/pkg/util/yaml"
-	yamlwriter "sigs.k8s.io/yaml"
 )
 
 var (
@@ -312,7 +312,7 @@ func (k *KubectlCommand) ResourceObjectsYAML(g Gingk8s, ctx context.Context, clu
 		if err != nil {
 			return err
 		}
-		objBytes, err := yamlwriter.Marshal(resolved)
+		objBytes, err := json.Marshal(resolved)
 		if err != nil {
 			return err
 		}
@@ -320,10 +320,10 @@ func (k *KubectlCommand) ResourceObjectsYAML(g Gingk8s, ctx context.Context, clu
 		if err != nil {
 			return err
 		}
-		_, err = out.Write([]byte("\n---\n"))
-		if err != nil {
-			return err
-		}
+		// _, err = out.Write([]byte("\n---\n"))
+		// if err != nil {
+		// 	return err
+		// }
 	}
 	return nil
 }

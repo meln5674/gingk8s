@@ -1,10 +1,13 @@
 package gingk8s
 
-import "fmt"
+import (
+	"fmt"
+)
 
 type ResourceDependencies struct {
 	ThirdPartyImages []ThirdPartyImageID
 	CustomImages     []CustomImageID
+	ImageArchives    []ImageArchiveID
 	Manifests        []ManifestsID
 	Releases         []ReleaseID
 	ClusterActions   []ClusterActionID
@@ -13,6 +16,7 @@ type ResourceDependencies struct {
 type ClusterDependencies struct {
 	ThirdPartyImages []ThirdPartyImageID
 	CustomImages     []CustomImageID
+	ImageArchives    []ImageArchiveID
 }
 
 var NoDependencies = ResourceDependencies{}
@@ -31,11 +35,13 @@ func (r *ResourceDependencies) AddResourceDependency(dep *ResourceDependencies) 
 	dep.Manifests = append(dep.Manifests, r.Manifests...)
 	dep.Releases = append(dep.Releases, r.Releases...)
 	dep.CustomImages = append(dep.CustomImages, r.CustomImages...)
+	dep.ImageArchives = append(dep.ImageArchives, r.ImageArchives...)
 }
 
 func (c ClusterDependencies) AddClusterDependency(dep *ClusterDependencies) {
 	dep.ThirdPartyImages = append(dep.ThirdPartyImages, c.ThirdPartyImages...)
 	dep.CustomImages = append(dep.CustomImages, c.CustomImages...)
+	dep.ImageArchives = append(dep.ImageArchives, c.ImageArchives...)
 }
 
 func forResourceDependencies(deps ...ResourceDependency) *ResourceDependencies {
@@ -56,12 +62,12 @@ func forClusterDependencies(deps ...ClusterDependency) *ClusterDependencies {
 	return &allDeps
 }
 
-func (r *ResourceDependencies) allIDs(clusterID string) []string {
+func (r *ResourceDependencies) allIDs(state *specState, clusterID string) []string {
 	dependsOn := []string{}
+	if _, ok := state.clusters[clusterID]; !ok {
+		panic(fmt.Sprintf("BUG: No cluster with ID %s", clusterID))
+	}
 	for _, image := range r.ThirdPartyImages {
-		if _, ok := state.clusterThirdPartyLoads[clusterID]; !ok {
-			panic(fmt.Sprintf("BUG: No cluster with ID %s", clusterID))
-		}
 		if _, ok := state.clusterThirdPartyLoads[clusterID][image.id]; !ok {
 			panic(fmt.Sprintf("BUG: Third-Party image %s is not set to load to cluster %s", image.id, clusterID))
 		}
@@ -75,6 +81,15 @@ func (r *ResourceDependencies) allIDs(clusterID string) []string {
 			panic(fmt.Sprintf("BUG: Custom image %s is not set to load to cluster %s", image.id, clusterID))
 		}
 		dependsOn = append(dependsOn, state.clusterCustomLoads[clusterID][image.id])
+	}
+	for _, image := range r.ImageArchives {
+		if _, ok := state.clusterImageArchiveLoads[clusterID]; !ok {
+			panic(fmt.Sprintf("BUG: No cluster with ID %s", clusterID))
+		}
+		if _, ok := state.clusterImageArchiveLoads[clusterID][image.id]; !ok {
+			panic(fmt.Sprintf("BUG: Custom image %s is not set to load to cluster %s", image.id, clusterID))
+		}
+		dependsOn = append(dependsOn, state.clusterImageArchiveLoads[clusterID][image.id])
 	}
 	for _, manifests := range r.Manifests {
 		dependsOn = append(dependsOn, manifests.id)

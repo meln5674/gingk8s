@@ -15,12 +15,16 @@ var cleanLock = sync.Mutex{}
 type specAction interface {
 	Setup(context.Context, *specState) error
 	Cleanup(context.Context, *specState)
+	Title(*specState) string
 }
 
 type specNoop struct{}
 
 func (s *specNoop) Setup(context.Context, *specState) error { return nil }
 func (s *specNoop) Cleanup(context.Context, *specState)     {}
+func (s *specNoop) Title(*specState) string {
+	return "No-op"
+}
 
 type specNode struct {
 	ctx context.Context
@@ -34,7 +38,9 @@ var _ = godag.Node[string, *specNode](&specNode{})
 
 func (s *specNode) DoDAGTask() ([]*specNode, error) {
 	defer GinkgoRecover()
-	defer ByStartStop(fmt.Sprintf("Gingk8s Node: %s", s.id))()
+	if _, ok := s.specAction.(*specNoop); !ok {
+		defer ByStartStop(fmt.Sprintf("Gingk8s Node: %s (%s)", s.Title(s.state), s.id))()
+	}
 	err := s.Setup(s.ctx, s.state)
 	if err != nil {
 		return nil, err
@@ -50,6 +56,10 @@ func (s *specNode) GetID() string {
 	return s.id
 }
 
+func (s *specNode) GetDescription() string {
+	return s.specAction.Title(s.state)
+}
+
 func (s *specNode) GetDependencies() godag.Set[string] {
 	return godag.SetFrom[string](s.dependsOn)
 }
@@ -61,6 +71,9 @@ type cleanupSpecNode struct {
 
 func (s cleanupSpecNode) DoDAGTask() ([]cleanupSpecNode, error) {
 	defer GinkgoRecover()
+	if _, ok := s.specAction.(*specNoop); !ok {
+		defer ByStartStop(fmt.Sprintf("Gingk8s Node (Undo): %s (%s)", s.Title(s.state), s.id))()
+	}
 	s.specNode.Cleanup(s.ctx, s.state)
 	return nil, nil
 }
@@ -73,6 +86,9 @@ type specState struct {
 	customImages       map[string]*CustomImage
 	customImageFormats map[string]ImageFormat
 	clusterCustomLoads map[string]map[string]string
+
+	imageArchives            map[string]*ImageArchive
+	clusterImageArchiveLoads map[string]map[string]string
 
 	clusters map[string]Cluster
 
@@ -105,19 +121,29 @@ func (s *specState) getCluster(id string) Cluster {
 	return c
 }
 
-func (s *specState) child() specState {
-	return newSpecState(s.suite, s)
+func (s *specState) child() *specState {
+	s2 := newSpecState(s.suite, s)
+	for id, cluster := range s.clusters {
+		cluster2 := noopCluster{Cluster: cluster}
+		s2.clusters[id] = cluster2
+		s2.setup = append(s2.setup, &specNode{state: &s2, id: id, specAction: &createClusterAction{id: id}})
+	}
+	return &s2
 }
 
 func newSpecState(suite *suiteState, parent *specState) specState {
 	return specState{
 		thirdPartyImages:       make(map[string]*ThirdPartyImage),
 		thirdPartyImageFormats: make(map[string]ImageFormat),
-		customImages:           make(map[string]*CustomImage),
-		customImageFormats:     make(map[string]ImageFormat),
 
-		clusterThirdPartyLoads: make(map[string]map[string]string),
-		clusterCustomLoads:     make(map[string]map[string]string),
+		customImages:       make(map[string]*CustomImage),
+		customImageFormats: make(map[string]ImageFormat),
+
+		imageArchives: make(map[string]*ImageArchive),
+
+		clusterThirdPartyLoads:   make(map[string]map[string]string),
+		clusterCustomLoads:       make(map[string]map[string]string),
+		clusterImageArchiveLoads: make(map[string]map[string]string),
 
 		clusters: make(map[string]Cluster),
 
@@ -140,7 +166,7 @@ func (s *specState) serialize() serializableSpec {
 		Clusters: make(map[string]*DummyCluster, len(s.clusters)),
 	}
 	for k, v := range s.clusters {
-		serializable.Clusters[k] = &DummyCluster{Connection: *v.GetConnection(), TempDir: v.GetTempDir()}
+		serializable.Clusters[k] = &DummyCluster{Connection: *v.GetConnection(), TempDir: v.GetTempDir(), Name: v.GetName()}
 	}
 	return serializable
 }

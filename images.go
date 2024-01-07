@@ -2,9 +2,13 @@ package gingk8s
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"os"
 	"strings"
 	"time"
+
+	"github.com/google/go-containerregistry/pkg/crane"
 
 	"github.com/meln5674/gosh"
 	. "github.com/onsi/ginkgo/v2"
@@ -104,14 +108,17 @@ type pullThirdPartyImageAction struct {
 
 func (p *pullThirdPartyImageAction) Setup(ctx context.Context, state *specState) error {
 	if state.suite.opts.NoPull {
-		By(fmt.Sprintf("SKIPPED: Pulling image %s", state.thirdPartyImages[p.id].Name))
+		By(fmt.Sprintf("SKIPPED: %s", p.Title(state)))
 		return nil
 	}
-	By(fmt.Sprintf("Pulling image %s", state.thirdPartyImages[p.id].Name))
 	return state.suite.opts.Images.Pull(ctx, state.thirdPartyImages[p.id]).Run()
 }
 
 func (p *pullThirdPartyImageAction) Cleanup(ctx context.Context, state *specState) {}
+
+func (p *pullThirdPartyImageAction) Title(state *specState) string {
+	return fmt.Sprintf("Pulling image %s", state.thirdPartyImages[p.id].Name)
+}
 
 type buildCustomImageAction struct {
 	id string
@@ -120,10 +127,9 @@ type buildCustomImageAction struct {
 func (b *buildCustomImageAction) Setup(ctx context.Context, state *specState) error {
 	image := state.customImages[b.id]
 	if state.suite.opts.NoBuild {
-		By(fmt.Sprintf("SKIPPED: Building image %s", image.WithTag(state.suite.opts.CustomImageTag)))
+		By(fmt.Sprintf("SKIPPED: %s", b.Title(state)))
 		return nil
 	}
-	defer ByStartStop(fmt.Sprintf("Building image %s", image.WithTag(state.suite.opts.CustomImageTag)))()
 	builder := image.Builder
 	if builder == nil {
 		builder = state.suite.opts.Images
@@ -132,6 +138,11 @@ func (b *buildCustomImageAction) Setup(ctx context.Context, state *specState) er
 }
 
 func (b *buildCustomImageAction) Cleanup(ctx context.Context, state *specState) {}
+
+func (b *buildCustomImageAction) Title(state *specState) string {
+	image := state.customImages[b.id]
+	return fmt.Sprintf("Building image %s", image.WithTag(state.suite.opts.CustomImageTag))
+}
 
 type loadThirdPartyImageAction struct {
 	id        string
@@ -142,14 +153,17 @@ type loadThirdPartyImageAction struct {
 
 func (l *loadThirdPartyImageAction) Setup(ctx context.Context, state *specState) error {
 	if state.suite.opts.NoLoadPulled {
-		By(fmt.Sprintf("SKIPPED: Loading image %s", state.thirdPartyImages[l.imageID].Name))
+		By(fmt.Sprintf("SKIPPED: %s", l.Title(state)))
 		return nil
 	}
-	defer ByStartStop(fmt.Sprintf("Loading image %s", state.thirdPartyImages[l.imageID].Name))()
 	return state.getCluster(l.clusterID).LoadImages(ctx, state.suite.opts.Images, state.thirdPartyImageFormats[l.imageID], []string{state.thirdPartyImages[l.imageID].Name}, l.noCache).Run()
 }
 
 func (l *loadThirdPartyImageAction) Cleanup(ctx context.Context, state *specState) {}
+
+func (l *loadThirdPartyImageAction) Title(state *specState) string {
+	return fmt.Sprintf("Loading image %s to cluster %s", state.thirdPartyImages[l.imageID].Name, state.clusters[l.clusterID].GetName())
+}
 
 type loadCustomImageAction struct {
 	id        string
@@ -160,10 +174,9 @@ type loadCustomImageAction struct {
 
 func (l *loadCustomImageAction) Setup(ctx context.Context, state *specState) error {
 	if state.suite.opts.NoLoadBuilt {
-		By(fmt.Sprintf("SKIPPED: Loading image %s", state.customImages[l.imageID].WithTag(state.suite.opts.CustomImageTag)))
+		By(fmt.Sprintf("SKIPPED: %s", l.Title(state)))
 		return nil
 	}
-	defer ByStartStop(fmt.Sprintf("Loading image %s", state.customImages[l.imageID].WithTag(state.suite.opts.CustomImageTag)))()
 	allTags := []string{state.customImages[l.imageID].WithTag(state.suite.opts.CustomImageTag)}
 	for _, extra := range state.suite.opts.ExtraCustomImageTags {
 		allTags = append(allTags, state.customImages[l.imageID].WithTag(extra))
@@ -172,6 +185,10 @@ func (l *loadCustomImageAction) Setup(ctx context.Context, state *specState) err
 }
 
 func (l *loadCustomImageAction) Cleanup(ctx context.Context, state *specState) {}
+
+func (l *loadCustomImageAction) Title(state *specState) string {
+	return fmt.Sprintf("Loading image %s to cluster %s", state.customImages[l.imageID].WithTag(state.suite.opts.CustomImageTag), state.clusters[l.clusterID].GetName())
+}
 
 // ThirdPartyImage represents an externally hosted image to be pulled and loaded into the cluster
 type ThirdPartyImage struct {
@@ -213,6 +230,100 @@ func (c *CustomImage) WithTag(tag string) string {
 		image.WriteString(tag)
 	}
 	return image.String()
+}
+
+type ImageArchive struct {
+	Name   string
+	NoPull bool
+	Path   string
+	Format ImageFormat
+}
+
+type ImageArchiveID struct {
+	id string
+}
+
+func (t ImageArchiveID) AddResourceDependency(dep *ResourceDependencies) {
+	dep.ImageArchives = append(dep.ImageArchives, t)
+}
+
+func (t ImageArchiveID) AddClusterDependency(dep *ClusterDependencies) {
+	dep.ImageArchives = append(dep.ImageArchives, t)
+}
+
+type ImageArchiveIDs []ImageArchiveID
+
+func (t ImageArchiveIDs) AddResourceDependency(dep *ResourceDependencies) {
+	dep.ImageArchives = append(dep.ImageArchives, t...)
+}
+
+func (t ImageArchiveIDs) AddClusterDependency(dep *ClusterDependencies) {
+	dep.ImageArchives = append(dep.ImageArchives, t...)
+}
+
+func (g Gingk8s) ImageArchives(archives ...*ImageArchive) ImageArchiveIDs {
+	newIDs := ImageArchiveIDs{}
+	for ix := range archives {
+		newID := newID()
+		newIDs = append(newIDs, ImageArchiveID{id: newID})
+		g.imageArchives[newID] = archives[ix]
+		g.setup = append(g.setup, &specNode{state: g.specState, id: newID, specAction: &pullImageArchiveAction{id: newID}})
+	}
+	return newIDs
+}
+
+func (g Gingk8s) ImageArchive(archive *ImageArchive) ImageArchiveID {
+	return g.ImageArchives(archive)[0]
+}
+
+type pullImageArchiveAction struct {
+	id string
+}
+
+func (p *pullImageArchiveAction) Setup(ctx context.Context, state *specState) error {
+	if state.suite.opts.NoPull || state.imageArchives[p.id].Name == "" || state.imageArchives[p.id].NoPull {
+		By(fmt.Sprintf("SKIPPED: %s", p.Title(state)))
+		return nil
+	}
+	_, err := os.Stat(state.imageArchives[p.id].Path)
+	if err == nil {
+		return nil
+	}
+	if !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	img, err := crane.Pull(state.imageArchives[p.id].Name)
+	if err != nil {
+		return err
+	}
+	return crane.Save(img, state.imageArchives[p.id].Name, state.imageArchives[p.id].Path)
+}
+
+func (p *pullImageArchiveAction) Cleanup(ctx context.Context, state *specState) {}
+
+func (p *pullImageArchiveAction) Title(state *specState) string {
+	return fmt.Sprintf("Pulling image %s to archive %s", state.imageArchives[p.id].Name, state.imageArchives[p.id].Path)
+}
+
+type loadImageArchiveAction struct {
+	id        string
+	clusterID string
+	archiveID string
+	noCache   bool
+}
+
+func (l *loadImageArchiveAction) Setup(ctx context.Context, state *specState) error {
+	if state.suite.opts.NoLoadPulled {
+		By(fmt.Sprintf("SKIPPED: %s", l.Title(state)))
+		return nil
+	}
+	return state.getCluster(l.clusterID).LoadImageArchives(ctx, state.imageArchives[l.archiveID].Format, []string{state.imageArchives[l.archiveID].Path}).Run()
+}
+
+func (l *loadImageArchiveAction) Cleanup(ctx context.Context, state *specState) {}
+
+func (l *loadImageArchiveAction) Title(state *specState) string {
+	return fmt.Sprintf("Loading image archive %s to cluster %s", state.imageArchives[l.archiveID].Name, state.clusters[l.clusterID].GetName())
 }
 
 // ImageFormat is what format an image is exported as
