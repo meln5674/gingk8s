@@ -50,7 +50,7 @@ func (m *manifestsAction) Setup(ctx context.Context, state *specState) error {
 }
 
 func (m *manifestsAction) Cleanup(ctx context.Context, state *specState) {
-	if state.NoCleanup() {
+	if state.NoCleanup() && state.manifests[m.id].SkipDelete {
 		return
 	}
 	Expect(state.suite.opts.Manifests.Delete(m.g, ctx, state.getCluster(m.clusterID), state.manifests[m.id]).Run()).To(Succeed())
@@ -83,8 +83,9 @@ type KubernetesManifests struct {
 	// Replace indicates these resources should be replaced, not applied
 	Replace bool
 	// Create indicates these resources should be created, not applied
-	Create bool
-	Wait   []WaitFor
+	Create     bool
+	Wait       []WaitFor
+	SkipDelete bool
 
 	// Created is the list of resources that were created/applied, in order.
 	// If nil, it is ignored.
