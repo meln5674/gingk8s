@@ -72,7 +72,8 @@ func (c ClusterDaemonCommander) Setup(g Gingk8s, ctx context.Context, cluster Cl
 }
 
 func (c ClusterDaemonCommander) Cleanup(g Gingk8s, ctx context.Context, cluster Cluster) error {
-	return c.Kill()
+	c.Kill()
+	return c.Wait()
 }
 
 type ClusterActionFuncs struct {
