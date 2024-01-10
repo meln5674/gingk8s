@@ -2,6 +2,7 @@ package gingk8s
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -97,6 +98,11 @@ func (h *HelmCommand) InstallOrUpgrade(g Gingk8s, ctx context.Context, cluster C
 	}
 	for k, v := range release.SetFile {
 		args = append(args, "--set-file", k+"="+v)
+	}
+	for k, v := range release.SetJSON {
+		vBytes, err := json.Marshal(v)
+		Expect(err).ToNot(HaveOccurred())
+		args = append(args, "--set-json", k+"="+string(vBytes))
 	}
 	for _, v := range release.ValuesFiles {
 		args = append(args, "--values", v)

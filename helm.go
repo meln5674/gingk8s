@@ -168,6 +168,8 @@ type HelmRelease struct {
 	SetString StringObject
 	// SetFile is a map of --set-file arguments
 	SetFile StringObject
+	// SetJSON is map of --set-json arguments. Its values will be passed to encoding/json.Marshal.
+	SetJSON NestedObject
 	// ValuesFiles is a list of files to be provided with --values
 	ValuesFiles []string
 	// Values is a set of objects to be serialized as YAML files and provided with --values
