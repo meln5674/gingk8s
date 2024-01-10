@@ -2,6 +2,7 @@ package gingk8s
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/meln5674/gosh"
 	. "github.com/onsi/gomega"
@@ -140,6 +141,6 @@ func (c *clusterActionAction) Cleanup(ctx context.Context, state *specState) {
 	Expect(c.cleanup(c.g, ctx, state.getCluster(c.clusterID))).To(Succeed())
 }
 
-func (c *clusterActionAction) Title(*specState) string {
-	return c.name
+func (c *clusterActionAction) Title(state *specState) string {
+	return fmt.Sprintf("Execute action %s in cluster %s", c.name, state.clusters[c.clusterID].GetName())
 }

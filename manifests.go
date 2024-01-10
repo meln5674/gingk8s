@@ -57,7 +57,7 @@ func (m *manifestsAction) Cleanup(ctx context.Context, state *specState) {
 }
 
 func (m *manifestsAction) Title(state *specState) string {
-	return state.manifests[m.id].Name
+	return fmt.Sprintf("Submit manifest set %s to cluster %s", state.manifests[m.id].Name, state.clusters[m.clusterID].GetName())
 }
 
 var (

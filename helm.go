@@ -62,7 +62,7 @@ func (r *releaseAction) Cleanup(ctx context.Context, state *specState) {
 }
 
 func (r *releaseAction) Title(state *specState) string {
-	return fmt.Sprintf("Creating helm release %s", state.releases[r.id].Name)
+	return fmt.Sprintf("Deploy helm release %s to cluster %s", state.releases[r.id].Name, state.clusters[r.clusterID].GetName())
 }
 
 // HelmRepo represents a repository to pull helm charts from
