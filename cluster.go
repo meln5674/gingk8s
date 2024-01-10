@@ -126,8 +126,11 @@ func ClusterTempPath(cluster Cluster, group string, path ...string) string {
 	return filepath.Join(append([]string{cluster.GetTempDir(), group}, path...)...)
 }
 
-// DummyCluster implements Cluster but only the methods Create() (which does nothing)
-// and GetConnection() (which returns a canned connection struct), any other calls panic
+// DummyCluster implements Cluster but only the methods Create() and Delete() (which do nothing)
+// and GetConnection() (which returns a canned connection struct), any other calls panic.
+// Bacause an empty KubernetesConnection uses whatever the default environment is,
+// DummyCluster{} will use the ambient environment, such as a KUBECONFIG-specified file to
+// connect to an existing cluster, or an in-cluster configuration
 type DummyCluster struct {
 	Connection KubernetesConnection
 	TempDir    string
@@ -135,7 +138,7 @@ type DummyCluster struct {
 }
 
 func (d *DummyCluster) Create(ctx context.Context, skipExisting bool) gosh.Commander {
-	panic("UNSUPPORTED")
+	return noopCommander(ctx)
 }
 func (d *DummyCluster) GetConnection() *KubernetesConnection {
 	return &d.Connection
@@ -153,7 +156,7 @@ func (d *DummyCluster) LoadImageArchives(ctx context.Context, format ImageFormat
 	panic("UNSUPPORTED")
 }
 func (d *DummyCluster) Delete(ctx context.Context) gosh.Commander {
-	panic("UNSUPPORTED")
+	return noopCommander(ctx)
 }
 
 type noopCluster struct {
