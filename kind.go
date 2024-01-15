@@ -66,6 +66,8 @@ type KindCluster struct {
 	DeleteCommand []string
 }
 
+var _ = Cluster(&KindCluster{})
+
 func (k *KindCluster) kind(ctx context.Context, args []string) *gosh.Cmd {
 	allArgs := []string{}
 	if len(args) > 0 && args[0] != "get" && args[1] != "clusters" {

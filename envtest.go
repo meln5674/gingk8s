@@ -21,6 +21,8 @@ type EnvTestCluster struct {
 	Name        string
 }
 
+var _ = Cluster(&EnvTestCluster{})
+
 func (e *EnvTestCluster) KubeconfigPath() string {
 	return filepath.Join(e.TempDir, "kubeconfig")
 }
@@ -133,9 +135,14 @@ func (e *EnvTestCluster) GetName() string {
 	return "envtest"
 }
 
-// LoadImages loads a set of images of a given format from.
+// LoadImages implements Cluster
 func (e *EnvTestCluster) LoadImages(ctx context.Context, from Images, format ImageFormat, images []string, noCache bool) gosh.Commander {
 	panic("LoadImages is not supported by EnvTest")
+}
+
+// LoadImageArchives implements Cluster
+func (e *EnvTestCluster) LoadImageArchives(ctx context.Context, format ImageFormat, archives []string) gosh.Commander {
+	panic("LoadImageArchives is not supported by EnvTest")
 }
 
 // Delete deletes the cluster. Delete should not fail if the cluster exists.

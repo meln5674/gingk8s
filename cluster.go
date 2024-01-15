@@ -137,6 +137,8 @@ type DummyCluster struct {
 	Name       string
 }
 
+var _ = Cluster(&DummyCluster{})
+
 func (d *DummyCluster) Create(ctx context.Context, skipExisting bool) gosh.Commander {
 	return noopCommander(ctx)
 }
@@ -162,6 +164,8 @@ func (d *DummyCluster) Delete(ctx context.Context) gosh.Commander {
 type noopCluster struct {
 	Cluster
 }
+
+var _ = Cluster(noopCluster{})
 
 func noopCommander(ctx context.Context) gosh.Commander {
 	return gosh.FromFunc(ctx, func(ctx context.Context, stdin io.Reader, stdout, stderr io.Writer, done chan error) error {
