@@ -50,7 +50,7 @@ func (m *manifestsAction) Setup(ctx context.Context, state *specState) error {
 }
 
 func (m *manifestsAction) Cleanup(ctx context.Context, state *specState) {
-	if state.NoCleanup() && state.manifests[m.id].SkipDelete {
+	if state.NoCleanup() || state.manifests[m.id].SkipDelete {
 		return
 	}
 	Expect(state.suite.opts.Manifests.Delete(m.g, ctx, state.getCluster(m.clusterID), state.manifests[m.id]).Run()).To(Succeed())
