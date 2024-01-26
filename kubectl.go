@@ -11,6 +11,8 @@ import (
 	"reflect"
 	"time"
 
+	corev1 "k8s.io/api/core/v1"
+
 	"github.com/meln5674/gosh"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -80,6 +82,28 @@ func (g Gingk8s) KubectlExec(ctx context.Context, cluster Cluster, name, cmd str
 	allArgs = append(allArgs, cmdArgs...)
 
 	return g.Kubectl(ctx, cluster, allArgs...).WithStreams(GinkgoOutErr)
+}
+
+func (g Gingk8s) KubectlGetServiceNodePorts(ctx context.Context, cluster Cluster, name string, args ...string) (map[string]int32, error) {
+	var err error
+
+	var svc corev1.Service
+	err = g.Kubectl(ctx, cluster, append([]string{"get", "svc", name, "-o", "json"}, args...)...).WithStreams(gosh.FuncOut(gosh.SaveJSON(&svc))).Run()
+	if err != nil {
+		return nil, err
+	}
+
+	ports := make(map[string]int32, len(svc.Spec.Ports))
+	for _, port := range svc.Spec.Ports {
+		if port.Name == "" {
+			continue
+		}
+		if port.NodePort == 0 {
+			continue
+		}
+		ports[port.Name] = port.NodePort
+	}
+	return ports, nil
 }
 
 type KubectlWatcher struct {
