@@ -10,6 +10,10 @@ import (
 	"path/filepath"
 	"strings"
 
+	corev1 "k8s.io/api/core/v1"
+
+	"sigs.k8s.io/yaml"
+
 	"github.com/meln5674/gosh"
 	. "github.com/onsi/ginkgo/v2"
 )
@@ -301,4 +305,58 @@ func (k *KindCluster) Delete(ctx context.Context) gosh.Commander {
 	} else {
 		return deleteCluster
 	}
+}
+
+type KindNetworkInfo struct {
+	NetworkCidr   string
+	NodeIPs       map[string]string
+	NodeHostnames []string
+	PodCIDR       string
+	ServiceCIDR   string
+	ServiceDomain string
+}
+
+func (k *KindCluster) GetNetworkInfo(ctx context.Context, g Gingk8s) (*KindNetworkInfo, error) {
+	var info KindNetworkInfo
+	var err error
+
+	var nodeList corev1.NodeList
+	err = g.Kubectl(ctx, k, "get", "nodes", "-o", "json").WithStreams(gosh.FuncOut(gosh.SaveJSON(&nodeList))).Run()
+	if err != nil {
+		return nil, err
+	}
+	info.NodeIPs = make(map[string]string, len(nodeList.Items))
+	info.NodeHostnames = make([]string, 0, len(nodeList.Items))
+	for _, node := range nodeList.Items {
+		var nodeIP, nodeHostname string
+		for _, addr := range node.Status.Addresses {
+			switch addr.Type {
+			case corev1.NodeInternalIP:
+				nodeIP = addr.Address
+			case corev1.NodeHostName:
+				nodeHostname = addr.Address
+			}
+		}
+		if nodeIP != "" && nodeHostname != "" {
+			info.NodeIPs[nodeHostname] = nodeIP
+			info.NodeHostnames = append(info.NodeHostnames, nodeHostname)
+		}
+	}
+
+	var kubeadmConfigMap corev1.ConfigMap
+	err = g.Kubectl(ctx, k, "get", "cm", "kubeadm-config", "-n", "kube-system", "-o", "json").WithStreams(gosh.FuncOut(gosh.SaveJSON(&kubeadmConfigMap))).Run()
+	if err != nil {
+		return nil, err
+	}
+	var kubeadmConfig map[string]interface{}
+	err = yaml.Unmarshal([]byte(kubeadmConfigMap.Data["ClusterConfiguration"]), &kubeadmConfig)
+	if err != nil {
+		return nil, err
+	}
+	networkingConfig := kubeadmConfig["networking"].(map[string]interface{})
+	info.PodCIDR = networkingConfig["podSubnet"].(string)
+	info.ServiceCIDR = networkingConfig["serviceSubnet"].(string)
+	info.ServiceDomain = networkingConfig["dnsDomain"].(string)
+
+	return &info, nil
 }
