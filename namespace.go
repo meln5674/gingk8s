@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/meln5674/gosh"
@@ -19,6 +18,8 @@ type RandomNamespace struct {
 	// If running on a cluster without the controller-manager (e.g. envtest), this must be true,
 	// otherwise, the namespace will never terminate
 	NeedFinalize bool
+	// SkipDeleteWait indicates to not wait for the namespace to be finalized
+	SkipDeleteWait bool
 }
 
 // Get returns the namespace that was created
@@ -41,22 +42,10 @@ func (r *RandomNamespace) Setup(g Gingk8s, ctx context.Context, cluster Cluster)
 }
 func (r *RandomNamespace) Cleanup(g Gingk8s, ctx context.Context, cluster Cluster) error {
 	cmds := []gosh.Commander{
-		g.Kubectl(ctx, cluster, "delete", "namespace", *r.namespace).WithStreams(GinkgoOutErr),
+		g.Kubectl(ctx, cluster, "delete", "namespace", *r.namespace, "--wait=false").WithStreams(GinkgoOutErr),
 	}
 	if r.NeedFinalize {
-		// https://stackoverflow.com/a/62959634/17621440
-		// tl;dr: EnvTest can't finalize namespaces, and kubectl can't finalize objects, by design, it seems, so we have to do this nonsense.
-		finalize := gosh.And(
-			// If we execute the finalize after the delete, the delete never finishes
-			// If we execute the finalize and delete concurrently, we get a conflict
-			// This is a hack that hopefully waits long enough for the delete to actually have "started"
-			gosh.FromFunc(ctx, func(ctx context.Context, stdin io.Reader, stdout, stderr io.Writer, done chan error) error {
-				go func() {
-					defer close(done)
-					time.Sleep(5 * time.Second)
-				}()
-				return nil
-			}),
+		cmds = append(cmds, gosh.And(
 			gosh.Pipeline(
 				g.Kubectl(ctx, cluster, "get", "namespace", *r.namespace, "-o", "json"),
 				gosh.FromFunc(ctx, func(ctx context.Context, stdin io.Reader, stdout, stderr io.Writer, done chan error) error {
@@ -80,8 +69,11 @@ func (r *RandomNamespace) Cleanup(g Gingk8s, ctx context.Context, cluster Cluste
 					return nil
 				}),
 				g.Kubectl(ctx, cluster, "replace", "--raw", fmt.Sprintf("/api/v1/namespaces/%s/finalize", *r.namespace), "-f", "-"),
-			)).WithStreams(GinkgoOutErr)
-		cmds = append(cmds, finalize)
+			)).WithStreams(GinkgoOutErr),
+		)
 	}
-	return gosh.FanOut(cmds...).WithLog(log).Run()
+	if !r.SkipDeleteWait {
+		cmds = append(cmds, g.Kubectl(ctx, cluster, "wait", "namespace", *r.namespace, "--for=delete").WithStreams(GinkgoOutErr))
+	}
+	return gosh.And(cmds...).Run()
 }
