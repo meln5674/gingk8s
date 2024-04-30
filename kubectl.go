@@ -12,11 +12,11 @@ import (
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/util/yaml"
 
 	"github.com/meln5674/gosh"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"k8s.io/apimachinery/pkg/util/yaml"
 )
 
 var (
@@ -360,13 +360,16 @@ func (k *KubectlCommand) CreateOrUpdate(g Gingk8s, ctx context.Context, cluster 
 		if manifests.Create {
 			args = []string{"create", "--filename", path, "--output", "yaml"}
 		} else {
-			args = []string{"apply", "--server-side", "--filename", path}
+			args = []string{"apply", "--server-side", "--filename", path, "--output", "yaml"}
 		}
 		if manifests.Replace {
 			args = append(args, "--replace")
 		}
 		if recursive {
 			args = append(args, "--recursive")
+		}
+		if manifests.Namespace != "" {
+			args = append(args, "-n", manifests.Namespace)
 		}
 		return args
 	}
@@ -391,19 +394,20 @@ func (k *KubectlCommand) CreateOrUpdate(g Gingk8s, ctx context.Context, cluster 
 		io.ReadAll(stdout)
 		return nil
 	}
+	objectsToYAML := func(ctx context.Context, stdin io.Reader, stdout, stderr io.Writer, done chan error) error {
+		go func() {
+			defer GinkgoRecover()
+			var err error
+			defer func() { done <- err; close(done) }()
+			err = func() error {
+				return k.ResourceObjectsYAML(g, ctx, cluster, stdout, manifests.ResourceObjects)
+			}()
+		}()
+		return nil
+	}
 	if len(manifests.ResourceObjects) != 0 {
 		applies = append(applies, gosh.Pipeline(
-			gosh.FromFunc(ctx, func(ctx context.Context, stdin io.Reader, stdout, stderr io.Writer, done chan error) error {
-				go func() {
-					defer GinkgoRecover()
-					var err error
-					defer func() { done <- err; close(done) }()
-					err = func() error {
-						return k.ResourceObjectsYAML(g, ctx, cluster, stdout, manifests.ResourceObjects)
-					}()
-				}()
-				return nil
-			}),
+			gosh.FromFunc(ctx, objectsToYAML),
 			k.Kubectl(ctx, cluster, applyFileArgs("-", false)).WithStreams(gosh.FuncOut(readYAMLs)),
 		))
 	}
@@ -436,6 +440,12 @@ func (k *KubectlCommand) Delete(g Gingk8s, ctx context.Context, cluster Cluster,
 		args := []string{"delete", "--filename", path}
 		if recursive {
 			args = append(args, "--recursive")
+		}
+		if manifests.Namespace != "" {
+			args = append(args, "-n", manifests.Namespace)
+		}
+		if manifests.SkipDeleteWait {
+			args = append(args, "--wait=false")
 		}
 		return args
 	}

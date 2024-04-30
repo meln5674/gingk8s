@@ -71,6 +71,8 @@ var (
 type KubernetesManifests struct {
 	// Name is a human-readable name to give the manifest set in logs
 	Name string
+	// Namespace is the namespace to use for manifests. If set, all manifests must either have no namespace set, or their namespace must match.
+	Namespace string
 	// ResourceObjects are objects to convert to YAML and treat as manifests.
 	// If using Object or NestedObject, functions are handled appropriately.
 	ResourceObjects []interface{}
@@ -83,9 +85,12 @@ type KubernetesManifests struct {
 	// Replace indicates these resources should be replaced, not applied
 	Replace bool
 	// Create indicates these resources should be created, not applied
-	Create     bool
-	Wait       []WaitFor
+	Create bool
+	Wait   []WaitFor
+	// SkipDelete indicates not to remove this resource on cleanup.
 	SkipDelete bool
+	// SkipDeleteWait indicates that after deleting these resources, do not wait for them to be fully removed
+	SkipDeleteWait bool
 
 	// Created is the list of resources that were created/applied, in order.
 	// If nil, it is ignored.
