@@ -153,7 +153,15 @@ func (k *KindCluster) Create(ctx context.Context, skipExisting bool) gosh.Comman
 				if err != nil {
 					return err
 				}
-				log.Info("SUCCEEDED: Generating Kind config for cluster from template", "path", configPath, "templatePath", k.ConfigFileTemplatePath)
+				f.Close()
+				config, err := os.ReadFile(configPath)
+				if err != nil {
+					return err
+				}
+				if err != nil {
+					return err
+				}
+				log.Info("SUCCEEDED: Generating Kind config for cluster from template", "path", configPath, "templatePath", k.ConfigFileTemplatePath, "output", string(config))
 				return nil
 			}()
 		}()
@@ -171,6 +179,7 @@ func (k *KindCluster) Create(ctx context.Context, skipExisting bool) gosh.Comman
 				for lines.Scan() {
 					if lines.Text() == k.Name {
 						err = nil
+						log.Info("Cluster exists, not creating", "name", k.Name)
 						return
 					}
 				}
@@ -179,6 +188,7 @@ func (k *KindCluster) Create(ctx context.Context, skipExisting bool) gosh.Comman
 					return
 				}
 				err = fmt.Errorf("No cluster name %s found", k.Name)
+				log.Info("Cluster does not exist, will create", "name", k.Name)
 			}()
 			return nil
 		}),
