@@ -182,16 +182,20 @@ func (k *KubectlPortForwarder) Cleanup(g Gingk8s, ctx context.Context, cluster C
 }
 
 type KubectlLogger struct {
-	Kind        string
-	Name        string
-	Flags       []string
-	RetryPeriod time.Duration
-	stop        chan struct{}
-	cancel      func()
-	stopped     chan struct{}
+	Kind          string
+	Name          string
+	Flags         []string
+	RetryPeriod   time.Duration
+	StopOnSuccess bool
+	stop          chan struct{}
+	cancel        func()
+	stopped       chan struct{}
 }
 
 func (k *KubectlLogger) Setup(g Gingk8s, ctx context.Context, cluster Cluster) error {
+	if k.stopped != nil {
+		Fail("Logger setup called twice: " + k.Name)
+	}
 	k.stop = make(chan struct{})
 	k.stopped = make(chan struct{})
 	ctx, k.cancel = context.WithCancel(ctx)
@@ -215,6 +219,10 @@ func (k *KubectlLogger) Setup(g Gingk8s, ctx context.Context, cluster Cluster) e
 				log.Info("Kubectl logger was canceled")
 				return
 			}
+			if err == nil && k.StopOnSuccess {
+				log.Info("Kubectl Logs exited without error, not retrying", "resource", ref)
+				return
+			}
 			select {
 			case <-k.stop:
 				return
@@ -231,6 +239,8 @@ func (k *KubectlLogger) Cleanup(g Gingk8s, ctx context.Context, cluster Cluster)
 	close(k.stop)
 	k.cancel()
 	<-k.stopped
+	k.stop = nil
+	k.stopped = nil
 	return nil
 }
 
